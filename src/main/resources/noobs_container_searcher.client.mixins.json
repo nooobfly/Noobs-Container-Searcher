@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "com.noobfly.containersearcher.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"AbstractContainerScreenMixin",
+		"EntityRendererMixin",
+		"KeyboardHandlerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
