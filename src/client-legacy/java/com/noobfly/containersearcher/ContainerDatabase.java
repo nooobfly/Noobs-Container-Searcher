@@ -1,0 +1,196 @@
+package com.noobfly.containersearcher;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.BlockPos;
+
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+public final class ContainerDatabase {
+	private static final Type DATA_TYPE = new TypeToken<Map<String, ContainerRecord>>() { }.getType();
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final Path FILE = FabricLoader.getInstance()
+		.getConfigDir()
+		.resolve("noobs-container-searcher")
+		.resolve("containers.json");
+
+	private static final long DEFERRED_SAVE_INTERVAL_MS = 30_000L;
+
+	private final Map<String, ContainerRecord> records = new LinkedHashMap<>();
+	private boolean dirty;
+	private long lastDeferredSave;
+
+	public void load() {
+		records.clear();
+		if (!Files.exists(FILE)) {
+			return;
+		}
+
+		try (Reader reader = Files.newBufferedReader(FILE)) {
+			Map<String, ContainerRecord> loaded = GSON.fromJson(reader, DATA_TYPE);
+			if (loaded != null) {
+				records.putAll(loaded);
+			}
+		} catch (Exception exception) {
+			ContainerSearcherClient.LOGGER.error("Konteyner veritabanı okunamadı", exception);
+			backupUnreadableFile();
+		}
+	}
+
+	private static void backupUnreadableFile() {
+		Path backup = FILE.resolveSibling(FILE.getFileName() + ".corrupt-" + System.currentTimeMillis());
+		try {
+			Files.move(FILE, backup, StandardCopyOption.REPLACE_EXISTING);
+			ContainerSearcherClient.LOGGER.warn("Bozuk veritabanı {} olarak yedeklendi", backup);
+		} catch (IOException exception) {
+			ContainerSearcherClient.LOGGER.error("Bozuk veritabanı yedeklenemedi", exception);
+		}
+	}
+
+	public void put(ContainerRecord record) {
+		records.put(key(record), record);
+		save();
+	}
+
+	public void putDeferred(ContainerRecord record) {
+		records.put(key(record), record);
+		dirty = true;
+	}
+
+	public void flushNow() {
+		if (dirty) {
+			save();
+		}
+	}
+
+	public void flush() {
+		if (!dirty || System.currentTimeMillis() - lastDeferredSave < DEFERRED_SAVE_INTERVAL_MS) {
+			return;
+		}
+		dirty = false;
+		lastDeferredSave = System.currentTimeMillis();
+		save();
+	}
+
+	public void put(ContainerRecord record, BlockPos obsoletePosition) {
+		if (obsoletePosition != null) {
+			records.remove(key(
+				record.server,
+				record.dimension,
+				obsoletePosition.getX(),
+				obsoletePosition.getY(),
+				obsoletePosition.getZ()
+			));
+		}
+		put(record);
+	}
+
+	public List<ContainerRecord> allForServer(String server) {
+		List<ContainerRecord> matches = new ArrayList<>();
+		for (ContainerRecord record : records.values()) {
+			if (server.equals(record.server)) {
+				matches.add(record);
+			}
+		}
+		return matches;
+	}
+
+	public void removeAll(Collection<ContainerRecord> removedRecords) {
+		boolean changed = false;
+		for (ContainerRecord record : removedRecords) {
+			changed |= records.remove(key(record)) != null;
+		}
+		if (changed) {
+			save();
+		}
+	}
+
+	public void clearServer(String server) {
+		if (records.values().removeIf(record -> server.equals(record.server))) {
+			save();
+		}
+	}
+
+	public List<ContainerRecord> search(
+		String server,
+		String dimension,
+		BlockPos playerPos,
+		String itemId,
+		boolean global
+	) {
+		List<ContainerRecord> matches = new ArrayList<>();
+		for (ContainerRecord record : records.values()) {
+			if (!server.equals(record.server) || !record.items.containsKey(itemId)) {
+				continue;
+			}
+			if (!global) {
+				if (!dimension.equals(record.dimension)) {
+					continue;
+				}
+				double dx = record.x + 0.5D - playerPos.getX();
+				double dy = record.y + 0.5D - playerPos.getY();
+				double dz = record.z + 0.5D - playerPos.getZ();
+				if (dx * dx + dy * dy + dz * dz > 100.0D * 100.0D) {
+					continue;
+				}
+			}
+			matches.add(record);
+		}
+
+		matches.sort((left, right) -> Double.compare(
+			distanceSquared(left, playerPos),
+			distanceSquared(right, playerPos)
+		));
+		return matches;
+	}
+
+	private void save() {
+		dirty = false;
+		lastDeferredSave = System.currentTimeMillis();
+		try {
+			Files.createDirectories(FILE.getParent());
+			Path temporary = FILE.resolveSibling(FILE.getFileName() + ".tmp");
+			try (Writer writer = Files.newBufferedWriter(temporary)) {
+				GSON.toJson(records, DATA_TYPE, writer);
+			}
+			Files.move(temporary, FILE, StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException exception) {
+			ContainerSearcherClient.LOGGER.error("Konteyner veritabanı kaydedilemedi", exception);
+		}
+	}
+
+	private static String key(String server, String dimension, int x, int y, int z) {
+		return server + "|" + dimension + "|" + x + "|" + y + "|" + z;
+	}
+
+	public static String keyOf(ContainerRecord record) {
+		return key(record);
+	}
+
+	private static String key(ContainerRecord record) {
+		if (record.entityUuid != null && !record.entityUuid.isBlank()) {
+			return record.server + "|" + record.dimension + "|villager|" + record.entityUuid;
+		}
+		return key(record.server, record.dimension, record.x, record.y, record.z);
+	}
+
+	private static double distanceSquared(ContainerRecord record, BlockPos pos) {
+		double dx = record.x + 0.5D - pos.getX();
+		double dy = record.y + 0.5D - pos.getY();
+		double dz = record.z + 0.5D - pos.getZ();
+		return dx * dx + dy * dy + dz * dz;
+	}
+}

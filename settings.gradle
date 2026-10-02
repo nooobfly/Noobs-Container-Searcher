@@ -1,0 +1,3 @@
+// Loom, sürüme göre değişen bir sürümde olduğu için build.gradle içindeki
+// buildscript classpath'inden yüklenir; burada plugin yönetimi gerekmiyor.
+rootProject.name = "noobs-container-searcher"

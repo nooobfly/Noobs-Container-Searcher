@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "noobs_container_searcher",
+	"version": "${version}",
+	"name": "Noob's Container Searcher",
+	"description": "Search items in containers you have opened before with a client-side command or keybind.",
+	"icon": "assets/noobs_container_searcher/icon.png",
+	"authors": [
+		"NoobFly"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.noobfly.containersearcher.ContainerSearcherClient"
+		]
+	},
+	"mixins": [
+		"noobs_container_searcher.client.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "${minecraft_dependency}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	}
+}
