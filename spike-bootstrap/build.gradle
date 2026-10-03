@@ -26,6 +26,8 @@ java {
 }
 
 processResources {
+	// Dil dosyaları ve ikon ana projeden alınır; kopyaları elle güncel tutmaya gerek yok.
+	from("../src/main/resources/assets") { into "assets" }
 	inputs.property "version", project.version
 	filesMatching("fabric.mod.json") {
 		expand("version": project.version)

@@ -18,10 +18,13 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class ContainerDatabase {
 	private static final Type DATA_TYPE = new TypeToken<Map<String, ContainerRecord>>() { }.getType();
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final Gson GSON = new GsonBuilder().create();
 	private static final Path FILE = FabricLoader.getInstance()
 		.getConfigDir()
 		.resolve("noobs-container-searcher")
@@ -29,9 +32,20 @@ public final class ContainerDatabase {
 
 	private static final long DEFERRED_SAVE_INTERVAL_MS = 30_000L;
 
+	private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(task -> {
+		Thread thread = new Thread(task, "noobs-container-searcher-writer");
+		thread.setDaemon(true);
+		return thread;
+	});
+
+	private final AtomicReference<Map<String, ContainerRecord>> pendingWrite = new AtomicReference<>();
 	private final Map<String, ContainerRecord> records = new LinkedHashMap<>();
 	private boolean dirty;
 	private long lastDeferredSave;
+
+	public ContainerDatabase() {
+		Runtime.getRuntime().addShutdownHook(new Thread(this::writePending, "noobs-container-searcher-shutdown"));
+	}
 
 	public void load() {
 		records.clear();
@@ -160,14 +174,23 @@ public final class ContainerDatabase {
 	private void save() {
 		dirty = false;
 		lastDeferredSave = System.currentTimeMillis();
+		pendingWrite.set(new LinkedHashMap<>(records));
+		WRITER.execute(this::writePending);
+	}
+
+	private synchronized void writePending() {
+		Map<String, ContainerRecord> snapshot = pendingWrite.getAndSet(null);
+		if (snapshot == null) {
+			return;
+		}
 		try {
 			Files.createDirectories(FILE.getParent());
 			Path temporary = FILE.resolveSibling(FILE.getFileName() + ".tmp");
 			try (Writer writer = Files.newBufferedWriter(temporary)) {
-				GSON.toJson(records, DATA_TYPE, writer);
+				GSON.toJson(snapshot, DATA_TYPE, writer);
 			}
 			Files.move(temporary, FILE, StandardCopyOption.REPLACE_EXISTING);
-		} catch (IOException exception) {
+		} catch (Exception exception) {
 			ContainerSearcherClient.LOGGER.error("Konteyner veritabanı kaydedilemedi", exception);
 		}
 	}
