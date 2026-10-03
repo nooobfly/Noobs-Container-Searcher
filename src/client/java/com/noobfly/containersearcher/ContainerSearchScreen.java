@@ -45,7 +45,6 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private static final int FILTER_ROW_HEIGHT = 16;
 	private static final int SIDEBAR_WIDTH = 176;
 
-	// Palette
 	private static final int APP_BACKDROP = 0xCC0B0C0F;
 	private static final int PANEL_BACKGROUND = 0xFA16171C;
 	private static final int SIDEBAR_BACKGROUND = 0xFA101115;
@@ -105,6 +104,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 		super(Component.translatable("screen.noobs_container_searcher.title"));
 		this.controller = controller;
 		this.records = records;
+		ITEM_NAME_CACHE.clear();
+		ENCHANTMENT_NAME_CACHE.clear();
 		this.reroll = ContainerSearcherClient.librarianReroll();
 		rebuild();
 	}
@@ -1155,15 +1156,25 @@ public final class ContainerSearchScreen extends CompatScreen {
 		return itemId;
 	}
 
+	private static final Map<ContainerItemRecord, String> ITEM_NAME_CACHE = new java.util.IdentityHashMap<>();
+	private static final Map<String, String> ENCHANTMENT_NAME_CACHE = new HashMap<>();
+
 	private static String localizedItemName(ContainerItemRecord record) {
-		ItemStack stack = decodeStack(record);
-		if (!stack.isEmpty()) {
-			return stack.getHoverName().getString();
+		String cached = ITEM_NAME_CACHE.get(record);
+		if (cached != null) {
+			return cached;
 		}
-		return itemName(record.itemId);
+		ItemStack stack = decodeStack(record);
+		String name = !stack.isEmpty() ? stack.getHoverName().getString() : itemName(record.itemId);
+		ITEM_NAME_CACHE.put(record, name);
+		return name;
 	}
 
 	private static String localizedEnchantmentName(String enchantmentId) {
+		return ENCHANTMENT_NAME_CACHE.computeIfAbsent(enchantmentId, ContainerSearchScreen::computeEnchantmentName);
+	}
+
+	private static String computeEnchantmentName(String enchantmentId) {
 		Identifier id = Identifier.tryParse(enchantmentId);
 		if (id == null) {
 			return enchantmentId;

@@ -403,7 +403,6 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 
 		AbstractContainerMenu menu = screen.getMenu();
 		if (menu == client.player.inventoryMenu) {
-			// Oyuncu envanteri; hiçbir bloğa ait değil.
 			return;
 		}
 		long now = System.currentTimeMillis();

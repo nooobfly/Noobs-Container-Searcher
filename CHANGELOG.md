@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10
+
+### Fixed
+
+- Fixed the game freezing when opening the search GUI and when saving a newly opened container or villager. The container database is now written to disk on a background thread instead of blocking the game, and the file is written in a compact format so it is smaller and faster to save.
+- Fixed the search GUI doing heavy repeated work on every open and every keystroke in the search box. Item and enchantment names are now resolved once and reused, so opening the GUI and typing a search is much smoother, especially with a large number of saved containers.
+
 ## 1.9
 
 ### Added
