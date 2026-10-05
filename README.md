@@ -28,3 +28,7 @@ Results are printed in chat with counts and clickable coordinates, and matching 
 `-Pmc` picks the Minecraft version, and `build-all.ps1` builds all of them. Jars end up in `build/libs`. `mod_version` is bumped after every build, add `-PnoBump` to skip that.
 
 The mod logic lives in `src/client`, and the version-specific parts are in the `src/mc*` folders. Each version's settings are in `gradle/mc-<version>.properties`.
+
+External Downloads:
+https://modrinth.com/mod/noobs-container-searcher
+https://www.curseforge.com/minecraft/mc-mods/noobs-container-searcher
