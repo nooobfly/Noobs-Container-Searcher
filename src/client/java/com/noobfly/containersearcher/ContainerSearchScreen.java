@@ -4,6 +4,7 @@ import com.noobfly.containersearcher.compat.Compat;
 import com.noobfly.containersearcher.compat.CompatScreen;
 import com.noobfly.containersearcher.compat.Gfx;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ConfirmScreen;
@@ -22,6 +23,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.tags.EnchantmentTags;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
@@ -37,43 +39,67 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.DoubleConsumer;
 
 public final class ContainerSearchScreen extends CompatScreen {
 	private enum Tab { SEARCH, REROLL, SETTINGS }
 
-	private static final int ROW_HEIGHT = 22;
-	private static final int FILTER_ROW_HEIGHT = 16;
-	private static final int SIDEBAR_WIDTH = 176;
+	private enum Sort { NAME, DISTANCE }
 
-	private static final int APP_BACKDROP = 0xCC0B0C0F;
-	private static final int PANEL_BACKGROUND = 0xFA16171C;
-	private static final int SIDEBAR_BACKGROUND = 0xFA101115;
-	private static final int SIDEBAR_DIVIDER = 0xFF25262C;
-	private static final int PANEL_BORDER = 0xFF2A2B31;
-	private static final int CARD_BACKGROUND = 0x80202126;
-	private static final int CARD_BACKGROUND_ALT = 0x801A1B20;
-	private static final int CARD_HOVER = 0x9A2A2C34;
-	private static final int CONTROL_BACKGROUND = 0xFF0E0F12;
-	private static final int CONTROL_BORDER = 0xFF2E2F36;
+	private static final int RESULT_HEIGHT = 28;
+	private static final int RESULT_STRIDE = 31;
+	private static final int ENCHANT_ROW = 16;
+	private static final int REROLL_CARD_HEIGHT = 26;
+	private static final int REROLL_CARD_STRIDE = 29;
+	private static final int HEADER_HEIGHT = 34;
+	private static final int FOOTER_HEIGHT = 22;
+
+	private static final int BACKDROP = 0xB0080910;
+	private static final int PANEL = 0xFF111218;
+	private static final int HEADER = 0xFF171820;
+	private static final int SURFACE = 0xFF1C1D26;
+	private static final int SURFACE_HI = 0xFF23242F;
+	private static final int INPUT_BG = 0xFF0D0E13;
+	private static final int BORDER = 0xFF2C2E3B;
+	private static final int BORDER_HI = 0xFF3A3D4F;
 
 	private static final int TEXT_PRIMARY = 0xFFF2F3F5;
-	private static final int TEXT_SECONDARY = 0xFF9A9CA6;
-	private static final int TEXT_MUTED = 0xFF5C5E68;
+	private static final int TEXT_SECONDARY = 0xFFA9ABB8;
+	private static final int TEXT_MUTED = 0xFF666878;
 
-	private static final int ACCENT = 0xFF5865F2;
-	private static final int ACCENT_HOVER = 0xFF7A85FF;
-	private static final int ACCENT_SOFT = 0x265865F2;
+	private static final int ACCENT = 0xFF6C7BFF;
+	private static final int ACCENT_HOVER = 0xFF8C99FF;
+	private static final int ACCENT_DARK = 0xFF4A56C8;
+	private static final int ACCENT_BG = 0xFF23264A;
 	private static final int DANGER = 0xFFED4245;
 	private static final int DANGER_HOVER = 0xFFF26669;
+	private static final int DANGER_DARK = 0xFFA82E31;
+	private static final int DANGER_BG = 0xFF3A1D22;
 	private static final int SUCCESS = 0xFF3BA55D;
 	private static final int WARNING = 0xFFFAA61A;
-
 	private static final int ENCHANT_PURPLE = 0xFFFF55FF;
-	private static final int ENCHANT_BLUE = 0xFFC9CDFB;
+	private static final int CONTAINER_CYAN = 0xFF55D6D6;
+
 	private static final int MAX_DISTANCE = 1000;
 	private static final int UNLIMITED_DISTANCE = -1;
 	private static final int[] DISTANCE_PRESETS = {100, 250, 500, UNLIMITED_DISTANCE};
-	private static final int REROLL_ROW_HEIGHT = 20;
+
+	private static final String[] ICON_SEARCH = {"..XXXX...", ".X....X..", "X......X.", "X......X.", "X......X.", ".X....X..", "..XXXXXX.", "......XXX", "........X"};
+	private static final String[] ICON_X = {"X...X", ".X.X.", "..X..", ".X.X.", "X...X"};
+	private static final String[] ICON_CHECK = {".....X", "....X.", "X..X..", ".XX...", "..X..."};
+	private static final String[] ICON_CHEVRON = {"XXXXX", ".XXX.", "..X.."};
+	private static final String[] ICON_ARROW = {"..X..", "...X.", "XXXXX", "...X.", "..X.."};
+	private static final String[] ICON_PIN = {".XXX.", "XXXXX", "XXXXX", ".XXX.", "..X..", "..X.."};
+
+	private record Hit(int x, int y, int w, int h, Runnable action) {
+		private boolean contains(double mx, double my) {
+			return mx >= x && my >= y && mx < x + w && my < y + h;
+		}
+	}
+
+	private record ScrollArea(int x, int y, int w, int h, DoubleConsumer onScroll) { }
+
+	private record ChipSpec(String label, int count, int dot, boolean active, boolean closable, Runnable click) { }
 
 	private final SearchController controller;
 	private final List<ContainerRecord> records;
@@ -84,21 +110,30 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private final List<EnchantmentChoice> allChoices = new ArrayList<>();
 	private final List<EnchantmentChoice> visibleChoices = new ArrayList<>();
 	private final Set<EnchantmentChoice> selectedChoices = new LinkedHashSet<>();
+	private final List<Hit> hits = new ArrayList<>();
+	private final List<ScrollArea> scrollAreas = new ArrayList<>();
+	private final Map<String, String> selectedTypeLabels = new LinkedHashMap<>();
 
 	private Tab tab = Tab.SEARCH;
+	private Sort sort = Sort.NAME;
 	private EditBox searchBox;
 	private EditBox filterSearchBox;
 	private EditBox rerollSearchBox;
 	private String selectedFilter;
+	private String selectedFilterLabel = "";
 	private final Set<String> selectedContainerTypeKeys = new LinkedHashSet<>();
 	private int maxDistance = UNLIMITED_DISTANCE;
+	private int resultContainerCount;
 	private double resultScroll;
 	private double filterScroll;
 	private double containerTypeScroll;
 	private double rerollScroll;
 	private boolean draggingDistanceSlider;
-	private int distanceDragX;
-	private int distanceDragWidth;
+	private int sliderX;
+	private int sliderWidth;
+	private int mx = -1;
+	private int my = -1;
+	private boolean ctrlDown;
 
 	public ContainerSearchScreen(SearchController controller, List<ContainerRecord> records) {
 		super(Component.translatable("screen.noobs_container_searcher.title"));
@@ -112,37 +147,35 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	@Override
 	protected void init() {
-		searchBox = new EditBox(font, 0, 0, 220, 22, Component.translatable("screen.noobs_container_searcher.search"));
-		searchBox.setHint(Component.translatable("screen.noobs_container_searcher.search_hint"));
-		searchBox.setBordered(false);
-		searchBox.setTextColor(TEXT_PRIMARY);
+		searchBox = newBox(Component.translatable("screen.noobs_container_searcher.search"), "screen.noobs_container_searcher.search_hint");
 		searchBox.setResponder(value -> {
 			resultScroll = 0;
 			rebuild();
 		});
-		addRenderableWidget(searchBox);
-
-		filterSearchBox = new EditBox(font, 0, 0, 160, 18, Component.translatable("screen.noobs_container_searcher.filter_search"));
-		filterSearchBox.setHint(Component.translatable("screen.noobs_container_searcher.filter_search_hint"));
-		filterSearchBox.setBordered(false);
-		filterSearchBox.setTextColor(TEXT_PRIMARY);
+		filterSearchBox = newBox(Component.translatable("screen.noobs_container_searcher.filter_search"), "screen.noobs_container_searcher.filter_search_hint");
 		filterSearchBox.setResponder(value -> {
 			filterScroll = 0;
 			containerTypeScroll = 0;
 			rebuild();
 		});
-		addRenderableWidget(filterSearchBox);
-
-		rerollSearchBox = new EditBox(font, 0, 0, 220, 22, Component.translatable("screen.noobs_container_searcher.reroll_search"));
-		rerollSearchBox.setHint(Component.translatable("screen.noobs_container_searcher.reroll_search_hint"));
-		rerollSearchBox.setBordered(false);
-		rerollSearchBox.setTextColor(TEXT_PRIMARY);
-		rerollSearchBox.setResponder(value -> rebuildChoices());
-		addRenderableWidget(rerollSearchBox);
+		rerollSearchBox = newBox(Component.translatable("screen.noobs_container_searcher.reroll_search"), "screen.noobs_container_searcher.reroll_search_hint");
+		rerollSearchBox.setResponder(value -> {
+			rerollScroll = 0;
+			rebuildChoices();
+		});
 
 		loadEnchantments();
-		positionWidgets();
 		switchTab(Tab.SEARCH);
+	}
+
+	private EditBox newBox(Component name, String hintKey) {
+		EditBox box = new EditBox(font, 0, 0, 100, 10, name);
+		box.setHint(Component.translatable(hintKey));
+		box.setBordered(false);
+		box.setTextColor(TEXT_PRIMARY);
+		box.setMaxLength(128);
+		addRenderableWidget(box);
+		return box;
 	}
 
 	@Override
@@ -162,355 +195,447 @@ public final class ContainerSearchScreen extends CompatScreen {
 		searchBox.setVisible(tab == Tab.SEARCH);
 		filterSearchBox.setVisible(tab == Tab.SEARCH);
 		rerollSearchBox.setVisible(tab == Tab.REROLL);
-		EditBox focusTarget = tab == Tab.SEARCH ? searchBox : tab == Tab.REROLL ? rerollSearchBox : null;
-		searchBox.setFocused(focusTarget == searchBox);
-		filterSearchBox.setFocused(false);
-		rerollSearchBox.setFocused(focusTarget == rerollSearchBox);
-		setFocused(focusTarget);
+		focusBox(tab == Tab.SEARCH ? searchBox : tab == Tab.REROLL ? rerollSearchBox : null);
+	}
+
+	private void focusBox(EditBox target) {
+		searchBox.setFocused(target == searchBox);
+		filterSearchBox.setFocused(target == filterSearchBox);
+		rerollSearchBox.setFocused(target == rerollSearchBox);
+		setFocused(target);
 	}
 
 	@Override
-	protected void renderContent(Gfx graphics, int mouseX, int mouseY, float partialTick) {
-		graphics.fill(0, 0, width, height, APP_BACKDROP);
-		positionWidgets();
+	protected void renderContent(Gfx g, int mouseX, int mouseY, float partialTick) {
+		mx = mouseX;
+		my = mouseY;
+		hits.clear();
+		scrollAreas.clear();
+		g.fill(0, 0, width, height, BACKDROP);
 
+		int pw = panelWidth();
+		int ph = panelHeight();
 		int left = panelLeft();
 		int top = panelTop();
-		int panelWidth = panelWidth();
-		int panelHeight = panelHeight();
-		int contentLeft = left + SIDEBAR_WIDTH;
-		int contentWidth = panelWidth - SIDEBAR_WIDTH;
+		rfill(g, left - 1, top - 1, pw + 2, ph + 2, 0xFF000000);
+		rfill(g, left, top, pw, ph, BORDER);
+		rfill(g, left + 1, top + 1, pw - 2, ph - 2, PANEL);
 
-		graphics.fill(left, top, left + panelWidth, top + panelHeight, PANEL_BACKGROUND);
-		graphics.outline(left, top, panelWidth, panelHeight, PANEL_BORDER);
+		renderHeader(g, left, top, pw);
+		int footerY = top + ph - FOOTER_HEIGHT;
+		g.fill(left + 1, footerY, left + pw - 1, footerY + 1, BORDER);
+		g.fill(left + 1, footerY + 1, left + pw - 1, top + ph - 1, HEADER);
 
-		renderSidebar(graphics, mouseX, mouseY, left, top, panelHeight);
-		graphics.fill(contentLeft, top, contentLeft + 1, top + panelHeight, SIDEBAR_DIVIDER);
-
+		int bx = left + 12;
+		int by = top + HEADER_HEIGHT + 4;
+		int bw = pw - 24;
+		int bh = footerY - by - 6;
+		g.enableScissor(left + 1, top + HEADER_HEIGHT, left + pw - 1, top + ph - 1);
 		switch (tab) {
-			case SEARCH -> renderSearchTab(graphics, mouseX, mouseY, contentLeft, top, contentWidth, panelHeight);
-			case REROLL -> renderRerollTab(graphics, mouseX, mouseY, contentLeft, top, contentWidth, panelHeight);
-			case SETTINGS -> renderSettingsTab(graphics, mouseX, mouseY, contentLeft, top, contentWidth, panelHeight);
+			case SEARCH -> renderSearchTab(g, bx, by, bw, bh, footerY);
+			case REROLL -> renderRerollTab(g, bx, by, bw, bh, footerY);
+			case SETTINGS -> renderSettingsTab(g, bx, by, bw, bh, footerY);
 		}
-
+		g.disableScissor();
 		renderWidgets(mouseX, mouseY, partialTick);
 	}
 
+	private void renderHeader(Gfx g, int left, int top, int pw) {
+		g.fill(left + 1, top + 1, left + pw - 1, top + HEADER_HEIGHT - 1, HEADER);
+		g.fill(left + 1, top + HEADER_HEIGHT - 1, left + pw - 1, top + HEADER_HEIGHT, BORDER);
+		g.fakeItem(new ItemStack(Items.SPYGLASS), left + 12, top + 9);
+		Component bold = title.copy().withStyle(ChatFormatting.BOLD);
+		g.text(font, bold, left + 33, top + 13, TEXT_PRIMARY);
 
-	private void renderSidebar(Gfx graphics, int mouseX, int mouseY, int left, int top, int panelHeight) {
-		graphics.fill(left, top, left + SIDEBAR_WIDTH, top + panelHeight, SIDEBAR_BACKGROUND);
+		int tx = left + 33 + font.width(bold) + 24;
+		tx = tabButton(g, Tab.SEARCH, Component.translatable("screen.noobs_container_searcher.tab_search"), tx, top, false);
+		tx = tabButton(g, Tab.REROLL, Component.translatable("screen.noobs_container_searcher.tab_reroll"), tx, top,
+			reroll.state() != LibrarianRerollController.State.IDLE);
+		tabButton(g, Tab.SETTINGS, Component.translatable("screen.noobs_container_searcher.tab_settings"), tx, top, false);
 
-		graphics.text(font, title, left + 20, top + 20, TEXT_PRIMARY);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.results", rows.size()), left + 20, top + 31, TEXT_MUTED);
-		graphics.fill(left + 16, top + 48, left + SIDEBAR_WIDTH - 16, top + 49, SIDEBAR_DIVIDER);
-
-		int itemY = top + 62;
-		itemY = renderSidebarItem(graphics, mouseX, mouseY, left, itemY, Tab.SEARCH,
-			Component.translatable("screen.noobs_container_searcher.tab_search"),
-			Component.translatable("screen.noobs_container_searcher.tab_search_hint"), ACCENT);
-		itemY = renderSidebarItem(graphics, mouseX, mouseY, left, itemY, Tab.REROLL,
-			Component.translatable("screen.noobs_container_searcher.tab_reroll"),
-			rerollStatusLine(), reroll.state() == LibrarianRerollController.State.IDLE ? ACCENT : SUCCESS);
-		renderSidebarItem(graphics, mouseX, mouseY, left, itemY, Tab.SETTINGS,
-			Component.translatable("screen.noobs_container_searcher.tab_settings"),
-			Component.translatable("screen.noobs_container_searcher.tab_settings_hint"), ACCENT);
-
-		String close = Component.translatable("screen.noobs_container_searcher.close").getString();
-		int closeWidth = font.width(close) + 16;
-		boolean closeHovered = inside(mouseX, mouseY, left + 16, top + panelHeight - 34, closeWidth, 22);
-		graphics.fill(left + 16, top + panelHeight - 34, left + 16 + closeWidth, top + panelHeight - 12, closeHovered ? CARD_HOVER : CARD_BACKGROUND);
-		graphics.text(font, close, left + 24, top + panelHeight - 27, closeHovered ? TEXT_PRIMARY : TEXT_SECONDARY);
+		int cx = left + pw - 30;
+		int cy = top + 7;
+		boolean hover = hovered(cx, cy, 20, 20);
+		card(g, cx, cy, 20, 20, hover ? SURFACE_HI : SURFACE, hover ? BORDER_HI : BORDER);
+		icon(g, ICON_X, cx + 7, cy + 8, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
+		hit(cx, cy, 20, 20, this::onClose);
 	}
 
-	private int renderSidebarItem(Gfx graphics, int mouseX, int mouseY, int left, int y, Tab itemTab, Component label, Component hint, int accent) {
-		int height = 40;
-		int x = left + 12;
-		int width = SIDEBAR_WIDTH - 24;
-		boolean active = tab == itemTab;
-		boolean hovered = inside(mouseX, mouseY, x, y, width, height);
-		graphics.fill(x, y, x + width, y + height, active ? ACCENT_SOFT : hovered ? CARD_HOVER : 0);
-		graphics.fill(x, y, x + 3, y + height, active ? accent : 0);
-		graphics.text(font, label, x + 14, y + 9, active ? TEXT_PRIMARY : TEXT_SECONDARY);
-		graphics.text(font, hint, x + 14, y + 21, active ? 0xFFC7CBFF : TEXT_MUTED);
-		return y + height + 6;
+	private int tabButton(Gfx g, Tab target, Component label, int x, int top, boolean live) {
+		int tw = font.width(label) + 24 + (live ? 8 : 0);
+		boolean active = tab == target;
+		boolean hover = hovered(x, top + 4, tw, HEADER_HEIGHT - 4);
+		if (active) {
+			g.fill(x, top + 8, x + tw, top + HEADER_HEIGHT, PANEL);
+			g.fill(x, top + 8, x + tw, top + 10, ACCENT);
+		} else if (hover) {
+			g.fill(x, top + 10, x + tw, top + HEADER_HEIGHT - 1, SURFACE);
+		}
+		int textX = x + 12;
+		if (live) {
+			g.fill(textX, top + 19, textX + 4, top + 23, SUCCESS);
+			textX += 8;
+		}
+		g.text(font, label, textX, top + 16, active ? TEXT_PRIMARY : TEXT_SECONDARY);
+		hit(x, top + 4, tw, HEADER_HEIGHT - 4, () -> switchTab(target));
+		return x + tw + 2;
 	}
 
-	private Component rerollStatusLine() {
-		return switch (reroll.state()) {
-			case IDLE -> Component.translatable("screen.noobs_container_searcher.tab_reroll_hint");
-			case SELECT_VILLAGER -> Component.translatable("screen.noobs_container_searcher.reroll_select_villager");
-			case SELECT_LECTERN_POSITION -> Component.translatable("screen.noobs_container_searcher.reroll_select_block");
-			case SUCCESS -> Component.translatable("screen.noobs_container_searcher.reroll_status_success");
-			default -> Component.translatable("screen.noobs_container_searcher.reroll_status_running", reroll.attempts());
-		};
+	private void footer(Gfx g, int footerY, String left, String right) {
+		g.text(font, trim(left, panelWidth() - 40 - font.width(right)), panelLeft() + 12, footerY + 7, TEXT_MUTED);
+		g.text(font, right, panelLeft() + panelWidth() - 12 - font.width(right), footerY + 7, TEXT_SECONDARY);
 	}
 
+	private void renderSearchTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.footer_search").getString(),
+			Component.translatable("screen.noobs_container_searcher.footer_results", rows.size(), resultContainerCount).getString());
 
-	private void renderSearchTab(Gfx graphics, int mouseX, int mouseY, int left, int top, int width, int panelHeight) {
-		int filterWidth = Math.min(190, Math.max(140, width / 3));
-		int resultLeft = left + filterWidth + 20;
-		int resultWidth = left + width - resultLeft - 16;
+		int colW = Math.min(184, bw / 3);
+		renderFilterColumn(g, bx, by, colW, bh);
+		g.fill(bx + colW + 8, by, bx + colW + 9, by + bh, BORDER);
 
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.filters"), left + 16, top + 32, TEXT_SECONDARY);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.container_types"), left + 16, containerTypeTitleY(top, panelHeight), TEXT_SECONDARY);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.search"), resultLeft, top + 10, TEXT_SECONDARY);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.results", rows.size()), resultLeft, top + 46, TEXT_SECONDARY);
+		int rx = bx + colW + 18;
+		int rw = bx + bw - rx;
+		searchField(g, searchBox, rx, by, rw, 22, true);
 
-		renderTextField(graphics, filterSearchBox, mouseX, mouseY);
-		renderFilters(graphics, mouseX, mouseY, left + 16, filterListTop(top), filterWidth - 8, filterListHeight(top, panelHeight));
-		renderContainerTypes(graphics, mouseX, mouseY, left + 16, containerTypeListTop(top, panelHeight), filterWidth - 8, containerTypeListHeight(top, panelHeight));
-
-		renderTextField(graphics, searchBox, mouseX, mouseY);
-		renderDistanceSlider(graphics, mouseX, mouseY, resultLeft, resultsDistanceSliderY(top), resultWidth);
-		renderResults(graphics, mouseX, mouseY, resultLeft, resultsTop(top), resultWidth, resultsHeight(top, panelHeight));
-	}
-
-
-	private void renderRerollTab(Gfx graphics, int mouseX, int mouseY, int left, int top, int width, int panelHeight) {
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.reroll_book_count", visibleChoices.size()), left + 16, top + 46, TEXT_SECONDARY);
-		renderTextField(graphics, rerollSearchBox, mouseX, mouseY);
-
-		int listX = left + 16;
-		int listY = top + 82;
-		int listWidth = width - 32;
-		int listHeight = panelHeight - 150;
-		graphics.enableScissor(listX, listY, listX + listWidth, listY + listHeight);
-		int start = Math.max(0, (int) (rerollScroll / REROLL_ROW_HEIGHT));
-		int offset = listY - (int) (rerollScroll % REROLL_ROW_HEIGHT);
-		for (int i = start; i < visibleChoices.size(); i++) {
-			int rowY = offset + (i - start) * REROLL_ROW_HEIGHT;
-			if (rowY >= listY + listHeight) {
+		int ty = by + 28;
+		g.text(font, Component.translatable("screen.noobs_container_searcher.try"), rx, ty + 2, TEXT_MUTED);
+		int tagX = rx + font.width(Component.translatable("screen.noobs_container_searcher.try")) + 6;
+		for (String snippet : new String[] {"name:", "lore:", "durability:<50", "enchanted"}) {
+			if (tagX + font.width(snippet) + 8 > rx + rw) {
 				break;
 			}
-			EnchantmentChoice choice = visibleChoices.get(i);
-			boolean hovered = inside(mouseX, mouseY, listX, rowY, listWidth, REROLL_ROW_HEIGHT - 2);
-			boolean selected = selectedChoices.contains(choice);
-			graphics.fill(listX, rowY, listX + listWidth, rowY + REROLL_ROW_HEIGHT - 2, selected ? ACCENT_SOFT : hovered ? CARD_HOVER : i % 2 == 0 ? CARD_BACKGROUND : CARD_BACKGROUND_ALT);
-			graphics.fill(listX, rowY, listX + 3, rowY + REROLL_ROW_HEIGHT - 2, selected ? ACCENT : 0);
-			graphics.text(font, choice.name, listX + 12, rowY + 6, selected ? TEXT_PRIMARY : TEXT_SECONDARY);
-			String idText = choice.id.toString();
-			graphics.text(font, idText, listX + listWidth - font.width(idText) - 10, rowY + 6, TEXT_MUTED);
-		}
-		graphics.disableScissor();
-		if (visibleChoices.isEmpty()) {
-			graphics.text(font, Component.translatable("screen.noobs_container_searcher.no_results"), listX + 4, listY + 6, TEXT_MUTED);
+			final String insert = snippet;
+			tagX += tag(g, tagX, ty, snippet, TEXT_SECONDARY, SURFACE, 12, () -> {
+				String current = searchBox.getValue().trim();
+				searchBox.setValue(current.isEmpty() ? insert : current + " " + insert);
+				focusBox(searchBox);
+			}) + 4;
 		}
 
-		boolean canSelect = !selectedChoices.isEmpty();
-		String selection = selectedChoices.isEmpty()
-			? Component.translatable("screen.noobs_container_searcher.no_book_selected").getString()
-			: selectedChoices.size() == 1
-				? Component.translatable("screen.noobs_container_searcher.selected_book", selectedChoices.iterator().next().name).getString()
-				: Component.translatable("screen.noobs_container_searcher.selected_books", selectedChoices.size()).getString();
-		int clearWidth = font.width(Component.translatable("screen.noobs_container_searcher.clear_selection").getString()) + 16;
-		graphics.text(font, trim(selection, listWidth - clearWidth - 10), listX, listY + listHeight + 8, TEXT_SECONDARY);
-		renderButton(graphics, mouseX, mouseY, listX + listWidth - clearWidth, listY + listHeight + 2, clearWidth, 18,
-			Component.translatable("screen.noobs_container_searcher.clear_selection"), CARD_HOVER, 0x9A3A3C46, canSelect);
-		String multiHint = Component.translatable("screen.noobs_container_searcher.reroll_multi_hint").getString();
-		graphics.text(font, multiHint, listX, listY + listHeight + 22, TEXT_MUTED);
+		renderDistanceRow(g, rx, by + 46, rw);
+		renderActiveFilters(g, rx, by + 74, rw);
 
-		int buttonY = top + panelHeight - 36;
-		renderButton(graphics, mouseX, mouseY, listX, buttonY, 170, 24,
-			Component.translatable("screen.noobs_container_searcher.select_villager"), ACCENT, ACCENT_HOVER, canSelect);
-		renderButton(graphics, mouseX, mouseY, listX + 180, buttonY, 140, 24,
-			Component.translatable("screen.noobs_container_searcher.stop_reroll"), DANGER, DANGER_HOVER,
-			reroll.state() != LibrarianRerollController.State.IDLE);
+		int sy = by + 94;
+		g.fill(rx, sy + 11, rx + rw, sy + 12, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.results", rows.size()), rx, sy + 2, TEXT_SECONDARY);
+		String sortLabel = Component.translatable(sort == Sort.NAME
+			? "screen.noobs_container_searcher.sort_name" : "screen.noobs_container_searcher.sort_distance").getString();
+		int sortW = font.width(sortLabel) + 22;
+		boolean sortHover = hovered(rx + rw - sortW, sy - 2, sortW, 14);
+		card(g, rx + rw - sortW, sy - 2, sortW, 14, sortHover ? SURFACE_HI : SURFACE, BORDER);
+		g.text(font, sortLabel, rx + rw - sortW + 6, sy + 1, TEXT_SECONDARY);
+		icon(g, ICON_CHEVRON, rx + rw - 12, sy + 3, TEXT_MUTED);
+		hit(rx + rw - sortW, sy - 2, sortW, 14, () -> {
+			sort = sort == Sort.NAME ? Sort.DISTANCE : Sort.NAME;
+			resultScroll = 0;
+			rebuild();
+		});
+
+		int ly = by + 112;
+		renderResults(g, rx, ly, rw, Math.max(RESULT_HEIGHT, by + bh - ly));
 	}
 
+	private void renderFilterColumn(Gfx g, int x, int by, int colW, int bh) {
+		searchField(g, filterSearchBox, x, by, colW, 18, false);
 
-	private void renderSettingsTab(Gfx graphics, int mouseX, int mouseY, int left, int top, int width, int panelHeight) {
-		int cardX = left + 16;
-		int cardWidth = width - 32;
-		int cardY = top + 50;
+		int y = by + 26;
+		caption(g, "screen.noobs_container_searcher.quick_filters", x, y);
+		y += 12;
+		List<ChipSpec> quick = new ArrayList<>();
+		for (FilterEntry filter : filters) {
+			if (!filter.id.startsWith("ench:")) {
+				quick.add(new ChipSpec(filter.name, filter.count, filterColor(filter), filter.id.equals(selectedFilter), false, () -> toggleFilter(filter)));
+			}
+		}
+		y += flowChips(g, quick, x, y, colW, true) + 6;
 
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.tab_settings"), cardX, top + 22, TEXT_PRIMARY);
+		List<ChipSpec> types = new ArrayList<>();
+		for (ContainerTypeEntry type : containerTypes) {
+			types.add(new ChipSpec(type.name, type.count, containerColor(type.name), selectedContainerTypeKeys.contains(type.key), false, () -> toggleContainerType(type)));
+		}
+		int typesAreaH = Math.min(flowChips(g, types, x, 0, colW, false), 54);
+		int typesTitleY = by + bh - typesAreaH - 14;
 
-		int distanceCardHeight = 88;
-		graphics.fill(cardX, cardY, cardX + cardWidth, cardY + distanceCardHeight, CARD_BACKGROUND);
-		graphics.fill(cardX, cardY, cardX + 3, cardY + distanceCardHeight, ACCENT);
-		renderDistanceSlider(graphics, mouseX, mouseY, cardX + 16, cardY + 14, cardWidth - 32);
-		renderDistanceChips(graphics, mouseX, mouseY, cardX + 16, cardY + 52, cardWidth - 32);
+		caption(g, "screen.noobs_container_searcher.enchantments", x, y);
+		y += 12;
+		int listH = Math.max(ENCHANT_ROW, typesTitleY - y - 6);
+		renderEnchantmentList(g, x, y, colW, listH);
 
-		int dangerY = cardY + distanceCardHeight + 16;
-		graphics.fill(cardX, dangerY, cardX + cardWidth, dangerY + 54, CARD_BACKGROUND);
-		graphics.fill(cardX, dangerY, cardX + 3, dangerY + 54, DANGER);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_title"), cardX + 16, dangerY + 10, TEXT_PRIMARY);
-		graphics.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_hint"), cardX + 16, dangerY + 21, TEXT_MUTED);
-		renderButton(graphics, mouseX, mouseY, cardX + cardWidth - 146, dangerY + 15, 130, 24,
-			Component.translatable("screen.noobs_container_searcher.clear_data"), DANGER, DANGER_HOVER, true);
+		caption(g, "screen.noobs_container_searcher.container_types", x, typesTitleY);
+		int chipsY = typesTitleY + 12;
+		if (types.isEmpty()) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.no_container_types"), x + 2, chipsY + 3, TEXT_MUTED);
+			return;
+		}
+		g.enableScissor(x, chipsY, x + colW, chipsY + typesAreaH);
+		int total = flowChips(g, types, x, chipsY - (int) containerTypeScroll, colW, true);
+		g.disableScissor();
+		containerTypeScroll = clampScroll(containerTypeScroll, total, typesAreaH);
+		scrollArea(x, chipsY, colW, typesAreaH, amount -> containerTypeScroll = clampScroll(containerTypeScroll - amount * 18, total, typesAreaH));
 	}
 
-
-	private void renderTextField(Gfx graphics, EditBox box, int mouseX, int mouseY) {
-		int x = box.getX();
-		int y = box.getY();
-		int w = box.getWidth();
-		int h = box.getHeight();
-		boolean focused = box.isFocused();
-		graphics.fill(x - 2, y - 2, x + w + 2, y + h + 2, CONTROL_BACKGROUND);
-		graphics.outline(x - 2, y - 2, w + 4, h + 4, focused ? ACCENT : CONTROL_BORDER);
-		graphics.fill(x - 2, y + h + 1, x + w + 2, y + h + 2, focused ? ACCENT : CONTROL_BORDER);
+	private void renderEnchantmentList(Gfx g, int x, int y, int colW, int listH) {
+		List<FilterEntry> enchants = new ArrayList<>();
+		for (FilterEntry filter : filters) {
+			if (filter.id.startsWith("ench:")) {
+				enchants.add(filter);
+			}
+		}
+		int content = enchants.size() * ENCHANT_ROW;
+		filterScroll = clampScroll(filterScroll, content, listH);
+		boolean bar = content > listH;
+		int rowW = colW - (bar ? 6 : 0);
+		g.enableScissor(x, y, x + colW, y + listH);
+		int start = Math.max(0, (int) (filterScroll / ENCHANT_ROW));
+		int offset = y - (int) (filterScroll % ENCHANT_ROW);
+		for (int i = start; i < enchants.size(); i++) {
+			int ry = offset + (i - start) * ENCHANT_ROW;
+			if (ry >= y + listH) {
+				break;
+			}
+			FilterEntry filter = enchants.get(i);
+			boolean selected = filter.id.equals(selectedFilter);
+			boolean hover = hovered(x, Math.max(ry, y), rowW, ENCHANT_ROW - 1) && my < y + listH;
+			rfill(g, x, ry, rowW, ENCHANT_ROW - 1, selected ? ACCENT_BG : hover ? SURFACE_HI : i % 2 == 0 ? SURFACE : PANEL, 1);
+			String count = Integer.toString(filter.count);
+			int nameX = x + 8;
+			if (selected) {
+				g.fill(x, ry + 2, x + 2, ry + ENCHANT_ROW - 3, ACCENT);
+				icon(g, ICON_CHECK, x + 7, ry + 5, ACCENT_HOVER);
+				nameX = x + 18;
+			}
+			g.text(font, trim(filter.name, rowW - (nameX - x) - font.width(count) - 12), nameX, ry + 4, selected ? TEXT_PRIMARY : ENCHANT_PURPLE);
+			g.text(font, count, x + rowW - 6 - font.width(count), ry + 4, TEXT_MUTED);
+			hitClipped(x, ry, rowW, ENCHANT_ROW - 1, x, y, colW, listH, () -> toggleFilter(filter));
+		}
+		g.disableScissor();
+		if (enchants.isEmpty()) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.no_filters"), x + 2, y + 3, TEXT_MUTED);
+		}
+		if (bar) {
+			scrollbar(g, x + colW - 3, y, listH, filterScroll, content);
+		}
+		scrollArea(x, y, colW, listH, amount -> filterScroll = clampScroll(filterScroll - amount * ENCHANT_ROW, content, listH));
 	}
 
-	private void renderButton(Gfx graphics, int mouseX, int mouseY, int x, int y, int width, int height, Component label, int color, int hoverColor, boolean enabled) {
-		boolean hovered = enabled && inside(mouseX, mouseY, x, y, width, height);
-		int fill = !enabled ? 0xFF25262C : hovered ? hoverColor : color;
-		graphics.fill(x, y, x + width, y + height, fill);
-		int textColor = enabled ? 0xFFFFFFFF : TEXT_MUTED;
-		graphics.centeredText(font, label, x + width / 2, y + (height - 8) / 2, textColor);
-	}
-
-
-	@Override
-	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-		if (super.mouseClicked(event, doubleClick)) {
-			return true;
+	private void renderActiveFilters(Gfx g, int x, int y, int width) {
+		boolean any = selectedFilter != null || !selectedContainerTypeKeys.isEmpty();
+		String label = Component.translatable("screen.noobs_container_searcher.active").getString();
+		g.text(font, label, x, y + 3, TEXT_MUTED);
+		int cx = x + font.width(label) + 6;
+		if (!any) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.active_none"), cx, y + 3, TEXT_MUTED);
+			return;
 		}
-		if (event.button() != 0) {
-			return false;
-		}
-		double mouseX = event.x();
-		double mouseY = event.y();
-		int left = panelLeft();
-		int top = panelTop();
-		int panelWidth = panelWidth();
-		int panelHeight = panelHeight();
-
-		if (handleSidebarClick(mouseX, mouseY, left, top, panelHeight)) {
-			return true;
-		}
-
-		int contentLeft = left + SIDEBAR_WIDTH;
-		int contentWidth = panelWidth - SIDEBAR_WIDTH;
-		return switch (tab) {
-			case SEARCH -> handleSearchClick(mouseX, mouseY, contentLeft, top, contentWidth);
-			case REROLL -> handleRerollClick(mouseX, mouseY, contentLeft, top, contentWidth, panelHeight, event.hasControlDown());
-			case SETTINGS -> handleSettingsClick(mouseX, mouseY, contentLeft, top, contentWidth);
-		};
-	}
-
-	private boolean handleSidebarClick(double mouseX, double mouseY, int left, int top, int panelHeight) {
-		int x = left + 12;
-		int width = SIDEBAR_WIDTH - 24;
-		int itemY = top + 62;
-		if (inside(mouseX, mouseY, x, itemY, width, 40)) {
-			switchTab(Tab.SEARCH);
-			return true;
-		}
-		itemY += 46;
-		if (inside(mouseX, mouseY, x, itemY, width, 40)) {
-			switchTab(Tab.REROLL);
-			return true;
-		}
-		itemY += 46;
-		if (inside(mouseX, mouseY, x, itemY, width, 40)) {
-			switchTab(Tab.SETTINGS);
-			return true;
-		}
-		String close = Component.translatable("screen.noobs_container_searcher.close").getString();
-		int closeWidth = font.width(close) + 16;
-		if (inside(mouseX, mouseY, left + 16, top + panelHeight - 34, closeWidth, 22)) {
-			onClose();
-			return true;
-		}
-		return false;
-	}
-
-	private boolean handleSearchClick(double mouseX, double mouseY, int left, int top, int width) {
-		int filterWidth = Math.min(190, Math.max(140, width / 3));
-		int resultLeftForSlider = left + filterWidth + 20;
-		int resultWidthForSlider = left + width - resultLeftForSlider - 16;
-		int sliderLabelY = resultsDistanceSliderY(top);
-		int trackY = sliderLabelY + 15;
-		int pillWidth = distancePillWidth();
-		if (inside(mouseX, mouseY, distanceSliderX(resultLeftForSlider), trackY, distanceSliderWidth(resultWidthForSlider, pillWidth), 16)) {
-			distanceDragX = resultLeftForSlider;
-			distanceDragWidth = resultWidthForSlider;
-			updateDistanceSlider(mouseX, distanceDragX, distanceDragWidth, pillWidth);
-			draggingDistanceSlider = true;
-			return true;
-		}
-		int filterX = left + 16;
-		int filterListTop = filterListTop(top);
-		int filterListHeight = filterListHeight(top, panelHeight());
-		int containerTypeListTop = containerTypeListTop(top, panelHeight());
-		int containerTypeListHeight = containerTypeListHeight(top, panelHeight());
-		int resultLeft = left + filterWidth + 20;
-		int resultWidth = left + width - resultLeft - 16;
-
-		if (inside(mouseX, mouseY, filterX, filterListTop, filterWidth - 8, filterListHeight)) {
-			int index = (int) ((mouseY - filterListTop + filterScroll) / FILTER_ROW_HEIGHT);
-			if (index >= 0 && index < filters.size()) {
-				FilterEntry filter = filters.get(index);
-				selectedFilter = filter.id.equals(selectedFilter) ? null : filter.id;
+		if (selectedFilter != null) {
+			cx += chip(g, cx, y, selectedFilterLabel, -1, selectedFilter.startsWith("ench:") ? ENCHANT_PURPLE : TEXT_SECONDARY, true, true, () -> {
+				selectedFilter = null;
 				resultScroll = 0;
 				rebuild();
-				return true;
-			}
+			}) + 4;
 		}
-
-		if (inside(mouseX, mouseY, filterX, containerTypeListTop, filterWidth - 8, containerTypeListHeight)) {
-			int index = (int) ((mouseY - containerTypeListTop + containerTypeScroll) / FILTER_ROW_HEIGHT);
-			if (index >= 0 && index < containerTypes.size()) {
-				ContainerTypeEntry type = containerTypes.get(index);
-				if (!selectedContainerTypeKeys.remove(type.key)) {
-					selectedContainerTypeKeys.add(type.key);
-				}
+		for (Map.Entry<String, String> type : new ArrayList<>(selectedTypeLabels.entrySet())) {
+			if (!selectedContainerTypeKeys.contains(type.getKey()) || cx > x + width - 80) {
+				continue;
+			}
+			cx += chip(g, cx, y, type.getValue(), -1, containerColor(type.getValue()), true, true, () -> {
+				selectedContainerTypeKeys.remove(type.getKey());
 				resultScroll = 0;
 				rebuild();
-				return true;
-			}
+			}) + 4;
 		}
-
-		int listTop = resultsTop(top);
-		int listHeight = resultsHeight(top, panelHeight());
-		if (inside(mouseX, mouseY, resultLeft, listTop, resultWidth, listHeight)) {
-			int index = (int) ((mouseY - listTop + resultScroll) / ROW_HEIGHT);
-			if (index >= 0 && index < rows.size()) {
-				ResultRow row = rows.get(index);
-				controller.focusItem(row.itemId, recordsFor(row), selectedFilter);
-				onClose();
-				return true;
-			}
-		}
-		return false;
+		String clear = Component.translatable("screen.noobs_container_searcher.clear_all").getString();
+		int clearW = font.width(clear);
+		boolean hover = hovered(cx + 4, y, clearW, 14);
+		g.text(font, clear, cx + 4, y + 3, hover ? TEXT_PRIMARY : ACCENT_HOVER);
+		hit(cx + 4, y, clearW, 14, () -> {
+			selectedFilter = null;
+			selectedContainerTypeKeys.clear();
+			selectedTypeLabels.clear();
+			resultScroll = 0;
+			rebuild();
+		});
 	}
 
-	private boolean handleRerollClick(double mouseX, double mouseY, int left, int top, int width, int panelHeight, boolean controlDown) {
-		int listX = left + 16;
-		int listY = top + 82;
-		int listWidth = width - 32;
-		int listHeight = panelHeight - 150;
-		if (inside(mouseX, mouseY, listX, listY, listWidth, listHeight)) {
-			int index = (int) ((mouseY - listY + rerollScroll) / REROLL_ROW_HEIGHT);
-			if (index >= 0 && index < visibleChoices.size()) {
-				EnchantmentChoice choice = visibleChoices.get(index);
-				if (controlDown) {
-					if (!selectedChoices.remove(choice)) {
-						selectedChoices.add(choice);
-					}
+	private void toggleFilter(FilterEntry filter) {
+		if (filter.id.equals(selectedFilter)) {
+			selectedFilter = null;
+		} else {
+			selectedFilter = filter.id;
+			selectedFilterLabel = filter.name;
+		}
+		resultScroll = 0;
+		rebuild();
+	}
+
+	private void toggleContainerType(ContainerTypeEntry type) {
+		if (!selectedContainerTypeKeys.remove(type.key)) {
+			selectedContainerTypeKeys.add(type.key);
+			selectedTypeLabels.put(type.key, type.name);
+		}
+		resultScroll = 0;
+		rebuild();
+	}
+
+	private void renderResults(Gfx g, int x, int y, int width, int height) {
+		int content = rows.size() * RESULT_STRIDE;
+		resultScroll = clampScroll(resultScroll, content, height);
+		boolean bar = content > height;
+		int rowW = width - (bar ? 8 : 0);
+		g.enableScissor(x, y, x + width, y + height);
+		int start = Math.max(0, (int) (resultScroll / RESULT_STRIDE));
+		int offset = y - (int) (resultScroll % RESULT_STRIDE);
+		for (int i = start; i < rows.size(); i++) {
+			int ry = offset + (i - start) * RESULT_STRIDE;
+			if (ry >= y + height) {
+				break;
+			}
+			renderResultRow(g, rows.get(i), x, ry, rowW, y, height);
+		}
+		g.disableScissor();
+		if (rows.isEmpty()) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.no_results"), x + 4, y + 6, TEXT_MUTED);
+		}
+		if (bar) {
+			scrollbar(g, x + width - 3, y, height, resultScroll, content);
+		}
+		scrollArea(x, y, width, height, amount -> resultScroll = clampScroll(resultScroll - amount * RESULT_STRIDE, content, height));
+	}
+
+	private void renderResultRow(Gfx g, ResultRow row, int x, int y, int w, int viewY, int viewH) {
+		boolean inView = my >= viewY && my < viewY + viewH;
+		boolean hover = inView && hovered(x, y, w, RESULT_HEIGHT);
+		card(g, x, y, w, RESULT_HEIGHT, hover ? SURFACE_HI : SURFACE, hover ? ACCENT : BORDER);
+
+		g.fill(x + 5, y + 4, x + 25, y + 24, INPUT_BG);
+		g.outline(x + 5, y + 4, 20, 20, row.item.enchanted ? BORDER_HI : BORDER);
+		Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(row.itemId));
+		ItemStack stack = ItemStack.EMPTY;
+		if (item != null) {
+			stack = displayStack(item, row.item);
+			g.fakeItem(stack, x + 7, y + 6);
+			g.itemDecorations(font, stack, x + 7, y + 6, "");
+			if (inView && hovered(x + 5, y + 4, 20, 20)) {
+				g.tooltip(font, tooltip(stack), mx, my);
+			}
+		}
+
+		int rightX = x + w - 8;
+		if (hover) {
+			String locate = Component.translatable("screen.noobs_container_searcher.locate").getString();
+			int bw = font.width(locate) + 28;
+			drawButton(g, rightX - bw, y + 4, bw, 20, locate, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, ICON_ARROW);
+			rightX -= bw + 8;
+		} else {
+			double distance = distanceTo(row.record);
+			if (distance != -2) {
+				String badge;
+				int fg;
+				int bg;
+				if (distance < 0) {
+					badge = Component.translatable("screen.noobs_container_searcher.other_dimension").getString();
+					fg = 0xFFFFB3B3;
+					bg = DANGER_BG;
 				} else {
-					selectedChoices.clear();
-					selectedChoices.add(choice);
+					badge = Component.translatable("screen.noobs_container_searcher.distance_short", Math.round(distance)).getString();
+					boolean near = distance < 100;
+					fg = near ? 0xFF8CE6A8 : 0xFFFFD98C;
+					bg = near ? 0xFF1C3326 : 0xFF3A2F18;
 				}
-				return true;
+				int bw = font.width(badge) + 8;
+				tag(g, rightX - bw, y + 8, badge, fg, bg, 12, null);
+				rightX -= bw + 8;
 			}
 		}
-		int clearWidth = font.width(Component.translatable("screen.noobs_container_searcher.clear_selection").getString()) + 16;
-		if (!selectedChoices.isEmpty() && inside(mouseX, mouseY, listX + listWidth - clearWidth, listY + listHeight + 2, clearWidth, 18)) {
-			selectedChoices.clear();
-			return true;
+
+		int countW = row.count > 1 ? font.width("x" + row.count) + 5 : 0;
+		int nameMax = Math.max(40, rightX - x - 36 - countW);
+		String name = trim(row.name, nameMax);
+		g.text(font, name, x + 32, y + 4, itemNameColor(stack, row.item));
+		if (row.count > 1) {
+			g.text(font, "x" + row.count, x + 32 + font.width(name) + 5, y + 4, TEXT_SECONDARY);
 		}
-		int buttonY = top + panelHeight - 36;
-		if (!selectedChoices.isEmpty() && inside(mouseX, mouseY, listX, buttonY, 170, 24)) {
-			beginSelection();
-			return true;
+
+		int cx = x + 32;
+		String container = containerName(row.record.containerType).getString();
+		g.fill(cx, y + 17, cx + 4, y + 20, containerColor(container));
+		String where = container + "  " + row.record.x + " " + row.record.y + " " + row.record.z;
+		int whereMax = Math.max(40, rightX - cx - 8);
+		String detail = trim(where, whereMax);
+		g.text(font, detail, cx + 7, y + 15, TEXT_SECONDARY);
+		cx += 7 + font.width(detail) + 8;
+		String dimension = shortDimension(row.record.dimension);
+		String more = dimension + durabilitySuffix(row.item);
+		if (cx + font.width(more) < rightX) {
+			g.text(font, more, cx, y + 15, TEXT_MUTED);
 		}
-		if (reroll.state() != LibrarianRerollController.State.IDLE && inside(mouseX, mouseY, listX + 180, buttonY, 140, 24)) {
-			reroll.stopByUser();
-			return true;
+		hitClipped(x, y, w, RESULT_HEIGHT, x, viewY, w, viewH, () -> {
+			controller.focusItem(row.itemId, recordsFor(row), selectedFilter);
+			onClose();
+		});
+	}
+
+	private static String durabilitySuffix(ContainerItemRecord item) {
+		return item.damageable && item.maxDamage > 0 ? "  " + durabilityPercent(item) + "%" : "";
+	}
+
+	private double distanceTo(ContainerRecord record) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) {
+			return -2;
 		}
-		return false;
+		if (!ContainerSearcherClient.dimensionKey(minecraft).equals(record.dimension)) {
+			return -1;
+		}
+		double dx = record.x + 0.5D - minecraft.player.getX();
+		double dy = record.y + 0.5D - minecraft.player.getY();
+		double dz = record.z + 0.5D - minecraft.player.getZ();
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	}
+
+	private void renderDistanceRow(Gfx g, int x, int y, int width) {
+		String label = Component.translatable("screen.noobs_container_searcher.distance_filter").getString();
+		g.text(font, label, x, y + 6, TEXT_SECONDARY);
+
+		int cx = x + width;
+		for (int i = DISTANCE_PRESETS.length - 1; i >= 0; i--) {
+			int preset = DISTANCE_PRESETS[i];
+			String text = preset == UNLIMITED_DISTANCE
+				? Component.translatable("screen.noobs_container_searcher.distance_any").getString()
+				: Integer.toString(preset);
+			int cw = font.width(text) + 14;
+			cx -= cw;
+			boolean active = maxDistance == preset;
+			boolean hover = hovered(cx, y, cw, 20);
+			card(g, cx, y, cw, 20, active ? ACCENT : hover ? SURFACE_HI : SURFACE, active ? ACCENT_HOVER : BORDER);
+			g.centeredText(font, Component.literal(text), cx + cw / 2, y + 6, active ? TEXT_PRIMARY : TEXT_SECONDARY);
+			hit(cx, y, cw, 20, () -> {
+				maxDistance = preset;
+				resultScroll = 0;
+				rebuild();
+			});
+			cx -= 3;
+		}
+
+		int pillW = distancePillWidth();
+		sliderX = x + font.width(label) + 10;
+		sliderWidth = Math.max(40, cx - sliderX - pillW - 8);
+		int trackY = y + 10;
+		g.fill(sliderX, trackY - 2, sliderX + sliderWidth, trackY + 2, INPUT_BG);
+		g.outline(sliderX, trackY - 2, sliderWidth, 4, BORDER);
+		int knob = distanceKnobX();
+		g.fill(sliderX + 1, trackY - 1, knob, trackY + 1, ACCENT);
+		boolean hover = hovered(sliderX, y + 2, sliderWidth, 16) || draggingDistanceSlider;
+		rfill(g, knob - 3, trackY - 6, 7, 12, INPUT_BG, 1);
+		rfill(g, knob - 2, trackY - 5, 5, 10, hover ? TEXT_PRIMARY : ACCENT_HOVER, 1);
+		hit(sliderX - 3, y + 2, sliderWidth + 7, 16, () -> {
+			draggingDistanceSlider = true;
+			updateDistanceSlider(mx);
+		});
+
+		int pillX = sliderX + sliderWidth + 8;
+		rfill(g, pillX, y + 2, pillW, 16, ACCENT_BG, 1);
+		g.centeredText(font, Component.literal(distanceValueText()), pillX + pillW / 2, y + 6, TEXT_PRIMARY);
 	}
 
 	private String distanceValueText() {
@@ -522,109 +647,461 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private int distancePillWidth() {
 		String longest = Component.translatable("screen.noobs_container_searcher.distance_value", MAX_DISTANCE).getString();
 		String unlimited = Component.translatable("screen.noobs_container_searcher.distance_unlimited").getString();
-		return Math.max(font.width(longest), font.width(unlimited)) + 16;
+		return Math.max(font.width(longest), font.width(unlimited)) + 14;
 	}
 
-	private boolean handleSettingsClick(double mouseX, double mouseY, int left, int top, int width) {
-		int cardX = left + 16;
-		int cardWidth = width - 32;
-		int cardY = top + 50;
-		int sliderLabelY = cardY + 14;
-		int trackY = sliderLabelY + 15;
-		int pillWidth = distancePillWidth();
-		if (inside(mouseX, mouseY, distanceSliderX(cardX + 16), trackY, distanceSliderWidth(cardWidth - 32, pillWidth), 16)) {
-			distanceDragX = cardX + 16;
-			distanceDragWidth = cardWidth - 32;
-			updateDistanceSlider(mouseX, distanceDragX, distanceDragWidth, pillWidth);
-			draggingDistanceSlider = true;
-			return true;
+	private int distanceKnobX() {
+		if (maxDistance == UNLIMITED_DISTANCE) {
+			return sliderX + sliderWidth;
 		}
-		int chipY = cardY + 52;
-		int chipPreset = distanceChipAt(mouseX, mouseY, cardX + 16, chipY);
-		if (chipPreset != Integer.MIN_VALUE) {
-			maxDistance = chipPreset;
+		double ratio = Math.max(0, Math.min(1, maxDistance / (double) MAX_DISTANCE));
+		return sliderX + (int) Math.round(ratio * sliderWidth);
+	}
+
+	private void updateDistanceSlider(double mouseX) {
+		double ratio = Math.max(0, Math.min(1, (mouseX - sliderX) / sliderWidth));
+		int newDistance = ratio >= 0.97D ? UNLIMITED_DISTANCE : Math.max(25, (int) Math.round(ratio * MAX_DISTANCE / 25.0D) * 25);
+		if (newDistance != maxDistance) {
+			maxDistance = newDistance;
 			resultScroll = 0;
 			rebuild();
-			return true;
 		}
-		int dangerY = cardY + 88 + 16;
-		if (inside(mouseX, mouseY, cardX + cardWidth - 146, dangerY + 15, 130, 24)) {
-			confirmClearData();
+	}
+
+	private void renderRerollTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.footer_reroll").getString(),
+			Component.translatable("screen.noobs_container_searcher.reroll_book_count", visibleChoices.size()).getString());
+
+		int sideW = Math.min(190, bw / 3);
+		int sideX = bx + bw - sideW;
+		int listW = sideX - bx - 14;
+
+		searchField(g, rerollSearchBox, bx, by, Math.min(300, listW), 22, true);
+		String multi = Component.translatable("screen.noobs_container_searcher.reroll_multi_hint").getString();
+		g.text(font, multi, bx + listW - font.width(multi), by + 7, TEXT_MUTED);
+
+		int gy = by + 30;
+		int gh = by + bh - gy;
+		int cols = Math.max(1, Math.min(3, (listW + 5) / 160));
+		int cardW = (listW - (cols - 1) * 5) / cols;
+		int content = ((visibleChoices.size() + cols - 1) / cols) * REROLL_CARD_STRIDE;
+		rerollScroll = clampScroll(rerollScroll, content, gh);
+		boolean bar = content > gh;
+		g.enableScissor(bx, gy, bx + listW + 6, gy + gh);
+		for (int i = 0; i < visibleChoices.size(); i++) {
+			int row = i / cols;
+			int cardY = gy + row * REROLL_CARD_STRIDE - (int) rerollScroll;
+			if (cardY + REROLL_CARD_HEIGHT < gy) {
+				continue;
+			}
+			if (cardY >= gy + gh) {
+				break;
+			}
+			int cardX = bx + (i % cols) * (cardW + 5);
+			EnchantmentChoice choice = visibleChoices.get(i);
+			boolean selected = selectedChoices.contains(choice);
+			boolean hover = my >= gy && my < gy + gh && hovered(cardX, cardY, cardW, REROLL_CARD_HEIGHT);
+			card(g, cardX, cardY, cardW, REROLL_CARD_HEIGHT, selected ? ACCENT_BG : hover ? SURFACE_HI : SURFACE, selected ? ACCENT : BORDER);
+			g.fill(cardX + 6, cardY + 6, cardX + 8, cardY + 20, selected ? ENCHANT_PURPLE : BORDER_HI);
+			g.text(font, trim(choice.name, cardW - 30), cardX + 13, cardY + 4, selected ? TEXT_PRIMARY : TEXT_SECONDARY);
+			g.text(font, trim(choice.id.getPath(), cardW - 22), cardX + 13, cardY + 14, TEXT_MUTED);
+			if (selected) {
+				icon(g, ICON_CHECK, cardX + cardW - 12, cardY + 5, ACCENT_HOVER);
+			}
+			hitClipped(cardX, cardY, cardW, REROLL_CARD_HEIGHT, bx, gy, listW, gh, () -> {
+				if (ctrlDown) {
+					if (!selectedChoices.remove(choice)) {
+						selectedChoices.add(choice);
+					}
+				} else if (selectedChoices.size() == 1 && selected) {
+					selectedChoices.clear();
+				} else {
+					selectedChoices.clear();
+					selectedChoices.add(choice);
+				}
+			});
+		}
+		g.disableScissor();
+		if (visibleChoices.isEmpty()) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.no_results"), bx + 4, gy + 6, TEXT_MUTED);
+		}
+		if (bar) {
+			scrollbar(g, bx + listW + 4, gy, gh, rerollScroll, content);
+		}
+		scrollArea(bx, gy, listW + 6, gh, amount -> rerollScroll = clampScroll(rerollScroll - amount * REROLL_CARD_STRIDE, content, gh));
+
+		renderRerollSide(g, sideX, by, sideW, bh);
+	}
+
+	private void renderRerollSide(Gfx g, int x, int by, int w, int bh) {
+		g.fill(x - 8, by, x - 7, by + bh, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.selected_books_title").withStyle(ChatFormatting.BOLD), x, by + 2, TEXT_PRIMARY);
+
+		int y = by + 18;
+		if (selectedChoices.isEmpty()) {
+			g.text(font, trim(Component.translatable("screen.noobs_container_searcher.no_book_selected").getString(), w), x, y + 3, TEXT_MUTED);
+			y += 18;
+		}
+		int shown = 0;
+		for (EnchantmentChoice choice : new ArrayList<>(selectedChoices)) {
+			if (shown == 4) {
+				g.text(font, Component.translatable("screen.noobs_container_searcher.more", selectedChoices.size() - 4), x, y + 2, TEXT_MUTED);
+				y += 14;
+				break;
+			}
+			card(g, x, y, w, 18, SURFACE, BORDER);
+			g.fill(x + 5, y + 5, x + 7, y + 13, ENCHANT_PURPLE);
+			g.text(font, trim(choice.name, w - 30), x + 12, y + 5, TEXT_PRIMARY);
+			boolean xHover = hovered(x + w - 16, y, 16, 18);
+			icon(g, ICON_X, x + w - 12, y + 8, xHover ? TEXT_PRIMARY : TEXT_MUTED);
+			hit(x + w - 16, y, 16, 18, () -> selectedChoices.remove(choice));
+			y += 21;
+			shown++;
+		}
+		if (selectedChoices.size() > 1) {
+			String clear = Component.translatable("screen.noobs_container_searcher.clear_all").getString();
+			boolean hover = hovered(x, y, font.width(clear), 12);
+			g.text(font, clear, x, y + 2, hover ? TEXT_PRIMARY : ACCENT_HOVER);
+			hit(x, y, font.width(clear), 12, selectedChoices::clear);
+			y += 16;
+		}
+		y += 6;
+		caption(g, "screen.noobs_container_searcher.requirements", x, y);
+		y += 12;
+		y = requirement(g, x, y, w, "screen.noobs_container_searcher.req_lectern", hotbarHas(Items.LECTERN));
+		y = requirement(g, x, y, w, "screen.noobs_container_searcher.req_axe", hotbarHas(Items.DIAMOND_AXE) || hotbarHas(Items.NETHERITE_AXE));
+		y += 6;
+		card(g, x, y, w, 36, SURFACE, BORDER);
+		caption(g, "screen.noobs_container_searcher.status", x + 8, y + 6);
+		g.text(font, trim(rerollStatusLine().getString(), w - 16), x + 8, y + 19,
+			reroll.state() == LibrarianRerollController.State.IDLE ? TEXT_PRIMARY : SUCCESS);
+
+		boolean canStart = !selectedChoices.isEmpty();
+		drawButton(g, x, by + bh - 52, w, 22, Component.translatable("screen.noobs_container_searcher.select_villager").getString(),
+			ACCENT, ACCENT_HOVER, ACCENT_DARK, canStart, ICON_PIN);
+		if (canStart) {
+			hit(x, by + bh - 52, w, 22, this::beginSelection);
+		}
+		boolean running = reroll.state() != LibrarianRerollController.State.IDLE;
+		drawButton(g, x, by + bh - 26, w, 22, Component.translatable("screen.noobs_container_searcher.stop_reroll").getString(),
+			DANGER, DANGER_HOVER, DANGER_DARK, running, null);
+		if (running) {
+			hit(x, by + bh - 26, w, 22, reroll::stopByUser);
+		}
+	}
+
+	private int requirement(Gfx g, int x, int y, int w, String key, boolean ok) {
+		icon(g, ok ? ICON_CHECK : ICON_X, x, y + 1, ok ? SUCCESS : DANGER);
+		g.text(font, trim(Component.translatable(key).getString(), w - 12), x + 11, y, TEXT_SECONDARY);
+		return y + 12;
+	}
+
+	private boolean hotbarHas(Item item) {
+		if (minecraft == null || minecraft.player == null) {
+			return false;
+		}
+		for (int slot = 0; slot < 9; slot++) {
+			if (minecraft.player.getInventory().getItem(slot).getItem() == item) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private Component rerollStatusLine() {
+		return switch (reroll.state()) {
+			case IDLE -> Component.translatable("screen.noobs_container_searcher.reroll_status_idle");
+			case SELECT_VILLAGER -> Component.translatable("screen.noobs_container_searcher.status_select_villager");
+			case SELECT_LECTERN_POSITION -> Component.translatable("screen.noobs_container_searcher.status_select_block");
+			case SUCCESS -> Component.translatable("screen.noobs_container_searcher.reroll_status_success");
+			default -> Component.translatable("screen.noobs_container_searcher.reroll_status_running", reroll.attempts());
+		};
+	}
+
+	private void renderSettingsTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.footer_settings").getString(), "");
+		int cw = Math.min(520, bw);
+
+		card(g, bx, by + 4, cw, 72, SURFACE, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_distance_title").withStyle(ChatFormatting.BOLD), bx + 14, by + 14, TEXT_PRIMARY);
+		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_distance_hint").getString(), cw - 28), bx + 14, by + 26, TEXT_MUTED);
+		renderDistanceRow(g, bx + 14, by + 46, cw - 28);
+
+		int y2 = by + 4 + 72 + 10;
+		card(g, bx, y2, cw, 70, SURFACE, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD), bx + 14, y2 + 12, TEXT_PRIMARY);
+		int items = 0;
+		for (ContainerRecord record : records) {
+			items += itemCount(record);
+		}
+		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_data_summary", records.size(), items).getString(), cw - 28),
+			bx + 14, y2 + 24, TEXT_MUTED);
+		String delete = Component.translatable("screen.noobs_container_searcher.clear_data").getString();
+		int dw = font.width(delete) + 28;
+		drawButton(g, bx + 14, y2 + 40, dw, 20, delete, DANGER, DANGER_HOVER, DANGER_DARK, true, null);
+		hit(bx + 14, y2 + 40, dw, 20, this::confirmClearData);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_irreversible"), bx + 14 + dw + 10, y2 + 46, TEXT_MUTED);
+	}
+
+	private void caption(Gfx g, String key, int x, int y) {
+		g.text(font, Component.translatable(key).getString().toUpperCase(Locale.ROOT), x, y, TEXT_MUTED);
+	}
+
+	private boolean hovered(int x, int y, int w, int h) {
+		return mx >= x && my >= y && mx < x + w && my < y + h;
+	}
+
+	private void hit(int x, int y, int w, int h, Runnable action) {
+		hits.add(new Hit(x, y, w, h, action));
+	}
+
+	private void hitClipped(int x, int y, int w, int h, int vx, int vy, int vw, int vh, Runnable action) {
+		int x1 = Math.max(x, vx);
+		int y1 = Math.max(y, vy);
+		int x2 = Math.min(x + w, vx + vw);
+		int y2 = Math.min(y + h, vy + vh);
+		if (x2 > x1 && y2 > y1) {
+			hit(x1, y1, x2 - x1, y2 - y1, action);
+		}
+	}
+
+	private void scrollArea(int x, int y, int w, int h, DoubleConsumer onScroll) {
+		scrollAreas.add(new ScrollArea(x, y, w, h, onScroll));
+	}
+
+	private static void rfill(Gfx g, int x, int y, int w, int h, int color) {
+		rfill(g, x, y, w, h, color, 2);
+	}
+
+	private static void rfill(Gfx g, int x, int y, int w, int h, int color, int radius) {
+		if (radius >= 2) {
+			g.fill(x + 2, y, x + w - 2, y + h, color);
+			g.fill(x + 1, y + 1, x + 2, y + h - 1, color);
+			g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, color);
+			g.fill(x, y + 2, x + 1, y + h - 2, color);
+			g.fill(x + w - 1, y + 2, x + w, y + h - 2, color);
+		} else {
+			g.fill(x + 1, y, x + w - 1, y + h, color);
+			g.fill(x, y + 1, x + w, y + h - 1, color);
+		}
+	}
+
+	private static void card(Gfx g, int x, int y, int w, int h, int fill, int border) {
+		rfill(g, x, y, w, h, border);
+		rfill(g, x + 1, y + 1, w - 2, h - 2, fill);
+	}
+
+	private static void icon(Gfx g, String[] bitmap, int x, int y, int color) {
+		for (int row = 0; row < bitmap.length; row++) {
+			String line = bitmap[row];
+			int run = -1;
+			for (int col = 0; col <= line.length(); col++) {
+				boolean on = col < line.length() && line.charAt(col) == 'X';
+				if (on && run < 0) {
+					run = col;
+				} else if (!on && run >= 0) {
+					g.fill(x + run, y + row, x + col, y + row + 1, color);
+					run = -1;
+				}
+			}
+		}
+	}
+
+	private void drawButton(Gfx g, int x, int y, int w, int h, String label, int base, int hover, int dark, boolean enabled, String[] icon) {
+		if (!enabled) {
+			card(g, x, y, w, h, SURFACE, BORDER);
+			g.centeredText(font, Component.literal(label), x + w / 2, y + (h - 2 - 8) / 2 + 1, TEXT_MUTED);
+			return;
+		}
+		boolean isHover = hovered(x, y, w, h);
+		rfill(g, x, y, w, h, dark);
+		rfill(g, x, y, w, h - 2, isHover ? hover : base);
+		g.fill(x + 2, y + 1, x + w - 2, y + 2, 0x30FFFFFF);
+		int textW = font.width(label) + (icon == null ? 0 : icon[0].length() + 4);
+		int tx = x + (w - textW) / 2;
+		if (icon != null) {
+			icon(g, icon, tx, y + (h - 2 - icon.length) / 2 + 1, 0xFFFFFFFF);
+			tx += icon[0].length() + 4;
+		}
+		g.text(font, label, tx, y + (h - 2 - 8) / 2 + 1, 0xFFFFFFFF);
+	}
+
+	private int tag(Gfx g, int x, int y, String label, int fg, int bg, int h, Runnable click) {
+		int w = font.width(label) + 8;
+		boolean hover = click != null && hovered(x, y, w, h);
+		rfill(g, x, y, w, h, hover ? SURFACE_HI : bg, 1);
+		g.text(font, label, x + 4, y + (h - 8) / 2 + 1, hover ? TEXT_PRIMARY : fg);
+		if (click != null) {
+			hit(x, y, w, h, click);
+		}
+		return w;
+	}
+
+	private String chipLabel(ChipSpec spec) {
+		return trim(spec.label, 120);
+	}
+
+	private int chipWidth(ChipSpec spec) {
+		return font.width(chipLabel(spec)) + 12 + (spec.dot != 0 ? 7 : 0) + (spec.count >= 0 ? font.width(Integer.toString(spec.count)) + 4 : 0) + (spec.closable ? 8 : 0);
+	}
+
+	private int chip(Gfx g, int x, int y, String label, int count, int dot, boolean active, boolean closable, Runnable click) {
+		return drawChip(g, new ChipSpec(label, count, dot, active, closable, click), x, y);
+	}
+
+	private int drawChip(Gfx g, ChipSpec spec, int x, int y) {
+		int w = chipWidth(spec);
+		boolean hover = hovered(x, y, w, 14);
+		card(g, x, y, w, 14, spec.active ? ACCENT_BG : hover ? SURFACE_HI : SURFACE, spec.active ? ACCENT : BORDER);
+		int cx = x + 6;
+		if (spec.dot != 0) {
+			g.fill(cx, y + 6, cx + 3, y + 9, spec.dot);
+			cx += 7;
+		}
+		String label = chipLabel(spec);
+		g.text(font, label, cx, y + 3, spec.active ? TEXT_PRIMARY : TEXT_SECONDARY);
+		cx += font.width(label);
+		if (spec.count >= 0) {
+			g.text(font, Integer.toString(spec.count), cx + 4, y + 3, TEXT_MUTED);
+		}
+		if (spec.closable) {
+			icon(g, ICON_X, x + w - 10, y + 5, ACCENT_HOVER);
+		}
+		hit(x, y, w, 14, spec.click);
+		return w;
+	}
+
+	private int flowChips(Gfx g, List<ChipSpec> specs, int x, int y, int maxWidth, boolean draw) {
+		int cx = x;
+		int cy = y;
+		for (ChipSpec spec : specs) {
+			int w = chipWidth(spec);
+			if (cx > x && cx + w > x + maxWidth) {
+				cx = x;
+				cy += 18;
+			}
+			if (draw) {
+				drawChip(g, spec, cx, cy);
+			}
+			cx += w + 4;
+		}
+		return specs.isEmpty() ? 0 : cy - y + 14;
+	}
+
+	private void searchField(Gfx g, EditBox box, int x, int y, int w, int h, boolean clearable) {
+		boolean focused = box.isFocused();
+		card(g, x, y, w, h, INPUT_BG, focused ? ACCENT : BORDER);
+		icon(g, ICON_SEARCH, x + 7, y + (h - 9) / 2, focused ? ACCENT_HOVER : TEXT_MUTED);
+		boolean showClear = clearable && !box.getValue().isEmpty();
+		box.setX(x + 22);
+		box.setY(y + (h - 8) / 2);
+		box.setWidth(w - 22 - (showClear ? 18 : 8));
+		box.setHeight(10);
+		hit(x, y, w, h, () -> focusBox(box));
+		if (showClear) {
+			boolean hover = hovered(x + w - 16, y, 16, h);
+			icon(g, ICON_X, x + w - 12, y + h / 2 - 2, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
+			hit(x + w - 16, y, 16, h, () -> {
+				box.setValue("");
+				focusBox(box);
+			});
+		}
+	}
+
+	private void scrollbar(Gfx g, int x, int y, int h, double scroll, int content) {
+		g.fill(x, y, x + 3, y + h, 0xFF15161C);
+		int thumb = Math.max(12, (int) (h * (h / (double) content)));
+		int range = Math.max(1, content - h);
+		int thumbY = y + (int) ((h - thumb) * (scroll / range));
+		g.fill(x, thumbY, x + 3, thumbY + thumb, BORDER_HI);
+	}
+
+	private static int containerColor(String name) {
+		String lower = name.toLowerCase(Locale.ROOT);
+		if (lower.contains("shulker")) {
+			return 0xFFC090E0;
+		}
+		if (lower.contains("barrel")) {
+			return 0xFFD09060;
+		}
+		if (lower.contains("chest")) {
+			return 0xFFE0B070;
+		}
+		if (lower.contains("villager")) {
+			return 0xFF90D0A0;
+		}
+		return 0xFF9AA0B0;
+	}
+
+	private boolean click(double mouseX, double mouseY, int button, boolean ctrl) {
+		if (button != 0) {
+			return false;
+		}
+		ctrlDown = ctrl;
+		for (int i = hits.size() - 1; i >= 0; i--) {
+			Hit hit = hits.get(i);
+			if (hit.contains(mouseX, mouseY)) {
+				hit.action.run();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean drag(double mouseX) {
+		if (draggingDistanceSlider) {
+			updateDistanceSlider(mouseX);
 			return true;
 		}
 		return false;
 	}
 
-	@Override
-	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-		if (draggingDistanceSlider) {
-			int pillWidth = distancePillWidth();
-			updateDistanceSlider(event.x(), distanceDragX, distanceDragWidth, pillWidth);
+	private void release() {
+		draggingDistanceSlider = false;
+	}
+
+	private boolean editKey(java.util.function.Predicate<EditBox> press) {
+		if (tab == Tab.SEARCH && (press.test(searchBox) || press.test(filterSearchBox))) {
 			return true;
 		}
-		return super.mouseDragged(event, dragX, dragY);
+		return tab == Tab.REROLL && press.test(rerollSearchBox);
+	}
+
+	// <<INPUT>>
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		if (super.mouseClicked(event, doubleClick)) {
+			return true;
+		}
+		return click(event.x(), event.y(), event.button(), event.hasControlDown());
+	}
+
+	@Override
+	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+		return drag(event.x()) || super.mouseDragged(event, dragX, dragY);
 	}
 
 	@Override
 	public boolean mouseReleased(MouseButtonEvent event) {
-		draggingDistanceSlider = false;
+		release();
 		return super.mouseReleased(event);
 	}
 
 	@Override
+	public boolean keyPressed(KeyEvent event) {
+		return editKey(box -> box.keyPressed(event)) || super.keyPressed(event);
+	}
+	// <</INPUT>>
+
+	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-		int left = panelLeft() + SIDEBAR_WIDTH;
-		int width = panelLeft() + panelWidth() - left;
-		int top = panelTop();
-		int panelHeight = panelHeight();
-
-		if (tab == Tab.SEARCH) {
-			int filterWidth = Math.min(190, Math.max(140, width / 3));
-			int filterListTop = filterListTop(top);
-			int filterListHeight = filterListHeight(top, panelHeight);
-			int containerTypeListTop = containerTypeListTop(top, panelHeight);
-			int containerTypeListHeight = containerTypeListHeight(top, panelHeight);
-			int resultLeft = left + filterWidth + 20;
-			int listTop = resultsTop(top);
-			int listHeight = resultsHeight(top, panelHeight);
-
-			if (inside(mouseX, mouseY, left + 16, filterListTop, filterWidth - 8, filterListHeight)) {
-				filterScroll = clampScroll(filterScroll - verticalAmount * 18, filters.size() * FILTER_ROW_HEIGHT, filterListHeight);
-				return true;
-			}
-			if (inside(mouseX, mouseY, left + 16, containerTypeListTop, filterWidth - 8, containerTypeListHeight)) {
-				containerTypeScroll = clampScroll(containerTypeScroll - verticalAmount * 18, containerTypes.size() * FILTER_ROW_HEIGHT, containerTypeListHeight);
-				return true;
-			}
-			if (inside(mouseX, mouseY, resultLeft, listTop, left + width - resultLeft - 16, listHeight)) {
-				resultScroll = clampScroll(resultScroll - verticalAmount * ROW_HEIGHT, rows.size() * ROW_HEIGHT, listHeight);
-				return true;
-			}
-		} else if (tab == Tab.REROLL) {
-			int listY = top + 82;
-			int listHeight = panelHeight - 150;
-			if (inside(mouseX, mouseY, left + 16, listY, width - 32, listHeight)) {
-				rerollScroll = clampScroll(rerollScroll - verticalAmount * REROLL_ROW_HEIGHT, visibleChoices.size() * REROLL_ROW_HEIGHT, listHeight);
+		for (ScrollArea area : scrollAreas) {
+			if (mouseX >= area.x && mouseY >= area.y && mouseX < area.x + area.w && mouseY < area.y + area.h) {
+				area.onScroll.accept(verticalAmount);
 				return true;
 			}
 		}
 		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-	}
-
-	@Override
-	public boolean keyPressed(KeyEvent event) {
-		if (tab == Tab.SEARCH) {
-			if (searchBox.keyPressed(event)) {
-				return true;
-			}
-			if (filterSearchBox.keyPressed(event)) {
-				return true;
-			}
-		}
-		if (tab == Tab.REROLL && rerollSearchBox.keyPressed(event)) {
-			return true;
-		}
-		return super.keyPressed(event);
 	}
 
 	@Override
@@ -657,7 +1134,6 @@ public final class ContainerSearchScreen extends CompatScreen {
 			.toList());
 	}
 
-
 	private void loadEnchantments() {
 		allChoices.clear();
 		if (minecraft == null || minecraft.level == null) {
@@ -687,9 +1163,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 				visibleChoices.add(choice);
 			}
 		}
-		rerollScroll = clampScroll(rerollScroll, visibleChoices.size() * REROLL_ROW_HEIGHT, panelHeight() - 150);
 	}
-
 
 	private void rebuild() {
 		rows.clear();
@@ -747,102 +1221,23 @@ public final class ContainerSearchScreen extends CompatScreen {
 			.comparingInt((FilterEntry filter) -> filter.order)
 			.thenComparing(filter -> filter.name.toLowerCase(Locale.ROOT)));
 		containerTypes.sort(Comparator.comparing(type -> type.name.toLowerCase(Locale.ROOT)));
-		rows.sort(Comparator
+		Comparator<ResultRow> byName = Comparator
 			.comparing((ResultRow row) -> row.name.toLowerCase(Locale.ROOT))
 			.thenComparing(row -> row.record.dimension)
 			.thenComparingInt(row -> row.record.x)
 			.thenComparingInt(row -> row.record.y)
-			.thenComparingInt(row -> row.record.z));
-		int top = panelTop();
-		int panelHeight = panelHeight();
-		resultScroll = clampScroll(resultScroll, rows.size() * ROW_HEIGHT, resultsHeight(top, panelHeight));
-		filterScroll = clampScroll(filterScroll, filters.size() * FILTER_ROW_HEIGHT, filterListHeight(top, panelHeight));
-		containerTypeScroll = clampScroll(containerTypeScroll, containerTypes.size() * FILTER_ROW_HEIGHT, containerTypeListHeight(top, panelHeight));
-	}
-
-	private void renderFilters(Gfx graphics, int mouseX, int mouseY, int x, int y, int width, int height) {
-		graphics.enableScissor(x, y, x + width, y + height);
-		int start = Math.max(0, (int) (filterScroll / FILTER_ROW_HEIGHT));
-		int offset = y - (int) (filterScroll % FILTER_ROW_HEIGHT);
-		for (int i = start; i < filters.size(); i++) {
-			int rowY = offset + (i - start) * FILTER_ROW_HEIGHT;
-			if (rowY > y + height) {
-				break;
-			}
-			FilterEntry filter = filters.get(i);
-			boolean selected = filter.id.equals(selectedFilter);
-			boolean hovered = inside(mouseX, mouseY, x, rowY, width, FILTER_ROW_HEIGHT);
-			int accent = filterColor(filter);
-			graphics.fill(x, rowY, x + width, rowY + FILTER_ROW_HEIGHT - 1, selected ? ACCENT_SOFT : hovered ? CARD_HOVER : CARD_BACKGROUND);
-			graphics.fill(x, rowY, x + 2, rowY + FILTER_ROW_HEIGHT - 1, selected ? accent : 0);
-			graphics.text(font, trim(filter.name + " (" + filter.count + ")", width - 10), x + 8, rowY + 4, selected ? TEXT_PRIMARY : accent);
+			.thenComparingInt(row -> row.record.z);
+		rows.sort(sort == Sort.DISTANCE
+			? Comparator.comparingDouble((ResultRow row) -> {
+				double distance = distanceTo(row.record);
+				return distance < 0 ? Double.MAX_VALUE : distance;
+			}).thenComparing(byName)
+			: byName);
+		Set<String> containerIds = new LinkedHashSet<>();
+		for (ResultRow row : rows) {
+			containerIds.add(recordIdentity(row.record));
 		}
-		graphics.disableScissor();
-		if (filters.isEmpty()) {
-			graphics.text(font, Component.translatable("screen.noobs_container_searcher.no_filters"), x + 4, y + 6, TEXT_MUTED);
-		}
-	}
-
-	private void renderContainerTypes(Gfx graphics, int mouseX, int mouseY, int x, int y, int width, int height) {
-		graphics.enableScissor(x, y, x + width, y + height);
-		int start = Math.max(0, (int) (containerTypeScroll / FILTER_ROW_HEIGHT));
-		int offset = y - (int) (containerTypeScroll % FILTER_ROW_HEIGHT);
-		for (int i = start; i < containerTypes.size(); i++) {
-			int rowY = offset + (i - start) * FILTER_ROW_HEIGHT;
-			if (rowY > y + height) {
-				break;
-			}
-			ContainerTypeEntry type = containerTypes.get(i);
-			boolean selected = selectedContainerTypeKeys.contains(type.key);
-			boolean hovered = inside(mouseX, mouseY, x, rowY, width, FILTER_ROW_HEIGHT);
-			int accent = selected ? 0xFF55D6D6 : TEXT_SECONDARY;
-			graphics.fill(x, rowY, x + width, rowY + FILTER_ROW_HEIGHT - 1, selected ? 0x2655D6D6 : hovered ? CARD_HOVER : CARD_BACKGROUND);
-			graphics.fill(x, rowY, x + 2, rowY + FILTER_ROW_HEIGHT - 1, selected ? accent : 0);
-			graphics.text(font, trim(type.name + " (" + type.count + ")", width - 10), x + 8, rowY + 4, selected ? TEXT_PRIMARY : accent);
-		}
-		graphics.disableScissor();
-		if (containerTypes.isEmpty()) {
-			graphics.text(font, Component.translatable("screen.noobs_container_searcher.no_container_types"), x + 4, y + 6, TEXT_MUTED);
-		}
-	}
-
-	private void renderResults(Gfx graphics, int mouseX, int mouseY, int x, int y, int width, int height) {
-		graphics.enableScissor(x, y, x + width, y + height);
-		int start = Math.max(0, (int) (resultScroll / ROW_HEIGHT));
-		int offset = y - (int) (resultScroll % ROW_HEIGHT);
-		for (int i = start; i < rows.size(); i++) {
-			int rowY = offset + (i - start) * ROW_HEIGHT;
-			if (rowY > y + height) {
-				break;
-			}
-			ResultRow row = rows.get(i);
-			boolean hovered = inside(mouseX, mouseY, x, rowY, width, ROW_HEIGHT);
-			graphics.fill(x, rowY, x + width, rowY + ROW_HEIGHT - 1, hovered ? CARD_HOVER : i % 2 == 0 ? CARD_BACKGROUND : CARD_BACKGROUND_ALT);
-			Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(row.itemId));
-			ItemStack stack = ItemStack.EMPTY;
-			if (item != null) {
-				stack = displayStack(item, row.item);
-				graphics.fakeItem(stack, x + 4, rowY + 3);
-				graphics.itemDecorations(font, stack, x + 4, rowY + 3, row.count > 1 ? Integer.toString(row.count) : null);
-				if (inside(mouseX, mouseY, x + 4, rowY + 3, 16, 16)) {
-					graphics.tooltip(font, tooltip(stack), mouseX, mouseY);
-				}
-			}
-			int idWidth = Math.min(font.width(row.itemId), Math.max(84, width / 3));
-			int textWidth = Math.max(40, width - 34 - idWidth - 8);
-			graphics.text(font, trim(row.name, textWidth), x + 26, rowY + 2, itemNameColor(stack, row.item));
-			String detail = containerName(row.record.containerType).getString()
-				+ " | " + row.record.x + " " + row.record.y + " " + row.record.z
-				+ " | " + shortDimension(row.record.dimension)
-				+ distanceDetail(row.record)
-				+ itemDetail(row.item);
-			graphics.text(font, trim(detail, textWidth), x + 26, rowY + 12, row.item.enchanted ? ENCHANT_BLUE : TEXT_SECONDARY);
-			graphics.text(font, trim(row.itemId, idWidth), x + width - idWidth - 4, rowY + 7, TEXT_MUTED);
-		}
-		graphics.disableScissor();
-		if (rows.isEmpty()) {
-			graphics.text(font, Component.translatable("screen.noobs_container_searcher.no_results"), x + 4, y + 6, TEXT_MUTED);
-		}
+		resultContainerCount = containerIds.size();
 	}
 
 	private List<ContainerRecord> recordsFor(ResultRow row) {
@@ -1202,149 +1597,6 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 
-	private void positionWidgets() {
-		int left = panelLeft() + SIDEBAR_WIDTH;
-		int top = panelTop();
-		int width = panelLeft() + panelWidth() - left;
-		int filterWidth = Math.min(190, Math.max(140, width / 3));
-		int resultLeft = left + filterWidth + 20;
-		int resultWidth = left + width - resultLeft - 16;
-
-		searchBox.setX(resultLeft);
-		searchBox.setY(top + 20);
-		searchBox.setWidth(resultWidth);
-		searchBox.setHeight(20);
-
-		filterSearchBox.setX(left + 16);
-		filterSearchBox.setY(top + 8);
-		filterSearchBox.setWidth(filterWidth - 8);
-		filterSearchBox.setHeight(18);
-
-		rerollSearchBox.setX(left + 16);
-		rerollSearchBox.setY(top + 56);
-		rerollSearchBox.setWidth(Math.min(300, width - 32));
-		rerollSearchBox.setHeight(20);
-	}
-
-	private int filterListTop(int top) {
-		return top + 44;
-	}
-
-	private int filterListHeight(int top, int panelHeight) {
-		return Math.max(34, containerTypeTitleY(top, panelHeight) - filterListTop(top) - 6);
-	}
-
-	private int containerTypeTitleY(int top, int panelHeight) {
-		return top + panelHeight - containerTypeSectionHeight(panelHeight);
-	}
-
-	private int containerTypeListTop(int top, int panelHeight) {
-		return containerTypeTitleY(top, panelHeight) + 14;
-	}
-
-	private int containerTypeListHeight(int top, int panelHeight) {
-		return Math.max(18, top + panelHeight - containerTypeListTop(top, panelHeight) - 10);
-	}
-
-	private int containerTypeSectionHeight(int panelHeight) {
-		return Math.min(94, Math.max(62, panelHeight / 3));
-	}
-
-	private int resultsTop(int top) {
-		return top + 118;
-	}
-
-	private int resultsHeight(int top, int panelHeight) {
-		return panelHeight - 128;
-	}
-
-	private int resultsDistanceSliderY(int top) {
-		return top + 86;
-	}
-
-	private static int distanceSliderX(int x) {
-		return x;
-	}
-
-	private static int distanceSliderWidth(int width, int pillWidth) {
-		return Math.max(60, width - pillWidth - 10);
-	}
-
-	private void renderDistanceSlider(Gfx graphics, int mouseX, int mouseY, int x, int y, int width) {
-		String label = Component.translatable("screen.noobs_container_searcher.distance_filter").getString();
-		String value = maxDistance == UNLIMITED_DISTANCE
-			? Component.translatable("screen.noobs_container_searcher.distance_unlimited").getString()
-			: Component.translatable("screen.noobs_container_searcher.distance_value", maxDistance).getString();
-		graphics.text(font, label, x, y, TEXT_SECONDARY);
-
-		int pillWidth = distancePillWidth();
-		int sliderX = distanceSliderX(x);
-		int sliderWidth = distanceSliderWidth(width, pillWidth);
-		int trackY = y + 15;
-		boolean hovered = inside(mouseX, mouseY, sliderX, trackY, sliderWidth, 16);
-
-		graphics.fill(sliderX, trackY + 6, sliderX + sliderWidth, trackY + 10, CONTROL_BACKGROUND);
-		graphics.outline(sliderX, trackY + 6, sliderWidth, 4, CONTROL_BORDER);
-		int knobX = distanceKnobX(sliderX, sliderWidth);
-		graphics.fill(sliderX, trackY + 6, knobX, trackY + 10, ACCENT);
-		graphics.fill(knobX - 3, trackY + 2, knobX + 4, trackY + 14, hovered ? TEXT_PRIMARY : ACCENT_HOVER);
-		graphics.outline(knobX - 3, trackY + 2, 7, 12, 0xFF15161A);
-
-		int pillX = sliderX + sliderWidth + 10;
-		graphics.fill(pillX, trackY, pillX + pillWidth, trackY + 16, ACCENT_SOFT);
-		graphics.text(font, value, pillX + 8, trackY + 4, TEXT_PRIMARY);
-	}
-
-	private void renderDistanceChips(Gfx graphics, int mouseX, int mouseY, int x, int y, int width) {
-		int chipX = x;
-		for (int preset : DISTANCE_PRESETS) {
-			String label = preset == UNLIMITED_DISTANCE
-				? Component.translatable("screen.noobs_container_searcher.distance_chip_unlimited").getString()
-				: Integer.toString(preset);
-			int chipWidth = font.width(label) + 16;
-			boolean active = maxDistance == preset;
-			boolean hovered = inside(mouseX, mouseY, chipX, y, chipWidth, 20);
-			graphics.fill(chipX, y, chipX + chipWidth, y + 20, active ? ACCENT : hovered ? CARD_HOVER : CARD_BACKGROUND_ALT);
-			graphics.text(font, label, chipX + 8, y + 6, active ? TEXT_PRIMARY : TEXT_SECONDARY);
-			chipX += chipWidth + 8;
-		}
-	}
-
-	private int distanceChipAt(double mouseX, double mouseY, int x, int y) {
-		int chipX = x;
-		for (int preset : DISTANCE_PRESETS) {
-			String label = preset == UNLIMITED_DISTANCE
-				? Component.translatable("screen.noobs_container_searcher.distance_chip_unlimited").getString()
-				: Integer.toString(preset);
-			int chipWidth = font.width(label) + 16;
-			if (inside(mouseX, mouseY, chipX, y, chipWidth, 20)) {
-				return preset;
-			}
-			chipX += chipWidth + 8;
-		}
-		return Integer.MIN_VALUE;
-	}
-
-	private int distanceKnobX(int sliderX, int sliderWidth) {
-		if (maxDistance == UNLIMITED_DISTANCE) {
-			return sliderX + sliderWidth;
-		}
-		double ratio = Math.max(0, Math.min(1, maxDistance / (double) MAX_DISTANCE));
-		return sliderX + (int) Math.round(ratio * sliderWidth);
-	}
-
-	private void updateDistanceSlider(double mouseX, int x, int width, int pillWidth) {
-		int sliderX = distanceSliderX(x);
-		int sliderWidth = distanceSliderWidth(width, pillWidth);
-		double ratio = Math.max(0, Math.min(1, (mouseX - sliderX) / sliderWidth));
-		int newDistance = ratio >= 0.97D ? UNLIMITED_DISTANCE : Math.max(25, (int) Math.round(ratio * MAX_DISTANCE / 25.0D) * 25);
-		if (newDistance != maxDistance) {
-			maxDistance = newDistance;
-			resultScroll = 0;
-			rebuild();
-		}
-	}
-
 	private boolean passesDistance(ContainerRecord record) {
 		if (maxDistance == UNLIMITED_DISTANCE || minecraft == null || minecraft.player == null || minecraft.level == null) {
 			return true;
@@ -1358,14 +1610,6 @@ public final class ContainerSearchScreen extends CompatScreen {
 		return dx * dx + dy * dy + dz * dz <= maxDistance * (double) maxDistance;
 	}
 
-	private boolean passesContainerType(ContainerRecord record, Map<String, ContainerTypeEntry> containerTypeMap) {
-		if (selectedContainerTypeKeys.isEmpty()) {
-			return true;
-		}
-		ContainerTypeEntry entry = containerTypeMap.get(containerTypeKey(record.containerType));
-		return entry != null && selectedContainerTypeKeys.contains(entry.key);
-	}
-
 	private int panelLeft() {
 		return width / 2 - panelWidth() / 2;
 	}
@@ -1375,11 +1619,19 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private int panelWidth() {
-		return (int) Math.round(width * 0.85D);
+		return Math.min(width - 8, Math.max((int) Math.round(width * 0.85D), 520));
 	}
 
 	private int panelHeight() {
-		return (int) Math.round(height * 0.85D);
+		return Math.min(height - 8, Math.max((int) Math.round(height * 0.85D), 300));
+	}
+
+	private boolean passesContainerType(ContainerRecord record, Map<String, ContainerTypeEntry> containerTypeMap) {
+		if (selectedContainerTypeKeys.isEmpty()) {
+			return true;
+		}
+		ContainerTypeEntry entry = containerTypeMap.get(containerTypeKey(record.containerType));
+		return entry != null && selectedContainerTypeKeys.contains(entry.key);
 	}
 
 	private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {
