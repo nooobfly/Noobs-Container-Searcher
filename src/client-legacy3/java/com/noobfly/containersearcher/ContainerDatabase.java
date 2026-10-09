@@ -59,7 +59,7 @@ public final class ContainerDatabase {
 				records.putAll(loaded);
 			}
 		} catch (Exception exception) {
-			ContainerSearcherClient.LOGGER.error("Konteyner veritabanı okunamadı", exception);
+			ContainerSearcherClient.LOGGER.error("Failed to read container database", exception);
 			backupUnreadableFile();
 		}
 	}
@@ -68,9 +68,9 @@ public final class ContainerDatabase {
 		Path backup = FILE.resolveSibling(FILE.getFileName() + ".corrupt-" + System.currentTimeMillis());
 		try {
 			Files.move(FILE, backup, StandardCopyOption.REPLACE_EXISTING);
-			ContainerSearcherClient.LOGGER.warn("Bozuk veritabanı {} olarak yedeklendi", backup);
+			ContainerSearcherClient.LOGGER.warn("Corrupt database backed up as {}", backup);
 		} catch (IOException exception) {
-			ContainerSearcherClient.LOGGER.error("Bozuk veritabanı yedeklenemedi", exception);
+			ContainerSearcherClient.LOGGER.error("Failed to back up corrupt database", exception);
 		}
 	}
 
@@ -191,7 +191,7 @@ public final class ContainerDatabase {
 			}
 			Files.move(temporary, FILE, StandardCopyOption.REPLACE_EXISTING);
 		} catch (Exception exception) {
-			ContainerSearcherClient.LOGGER.error("Konteyner veritabanı kaydedilemedi", exception);
+			ContainerSearcherClient.LOGGER.error("Failed to save container database", exception);
 		}
 	}
 

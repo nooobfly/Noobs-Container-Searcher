@@ -21,6 +21,10 @@ public abstract class CompatScreen extends Screen {
 		}
 	}
 
+	@Override
+	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+	}
+
 	protected final void renderWidgets(int mouseX, int mouseY, float partialTick) {
 		if (currentGraphics != null) {
 			super.render(currentGraphics, mouseX, mouseY, partialTick);

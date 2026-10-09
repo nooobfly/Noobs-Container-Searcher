@@ -27,4 +27,12 @@ public final class Compat {
 	public static void interact(Minecraft client, Entity target, InteractionHand hand) {
 		client.gameMode.interact(client.player, target, new EntityHitResult(target), hand);
 	}
+
+	public static void swing(LocalPlayer player) {
+		player.swing(InteractionHand.MAIN_HAND);
+	}
+
+	public static boolean isLeftButton(int b) {
+		return b == 0;
+	}
 }

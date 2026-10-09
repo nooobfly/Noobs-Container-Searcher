@@ -25,7 +25,7 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -55,9 +55,9 @@ public final class SearchController {
 	}
 
 	public void register() {
-		searchHeldItemKey = Keys.register("key.noobs_container_searcher.search_held_item", GLFW.GLFW_KEY_S);
-		searchModifierKey = Keys.register("key.noobs_container_searcher.search_modifier", GLFW.GLFW_KEY_LEFT_ALT);
-		openSearchMenuKey = Keys.register("key.noobs_container_searcher.open_search_menu", GLFW.GLFW_KEY_G);
+		searchHeldItemKey = Keys.register("key.noobs_container_searcher.search_held_item", InputConstants.KEY_R);
+		searchModifierKey = Keys.register("key.noobs_container_searcher.search_modifier", InputConstants.KEY_LALT);
+		openSearchMenuKey = Keys.register("key.noobs_container_searcher.open_search_menu", InputConstants.KEY_G);
 
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
 			dispatcher.register(createCommand("containersearch"));

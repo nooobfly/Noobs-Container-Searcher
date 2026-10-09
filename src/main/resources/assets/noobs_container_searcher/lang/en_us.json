@@ -98,6 +98,8 @@
 	"screen.noobs_container_searcher.footer_reroll": "Pick the enchanted book you want; the mod rerolls the librarian until it shows up",
 	"screen.noobs_container_searcher.footer_settings": "Changes apply instantly",
 	"screen.noobs_container_searcher.settings_distance_title": "Search distance",
+	"screen.noobs_container_searcher.settings_item_display_title": "Item display",
+	"screen.noobs_container_searcher.settings_item_display_hint": "Show the floating item preview on container faces.",
 	"screen.noobs_container_searcher.settings_distance_hint": "Only show containers closer than this to you.",
 	"screen.noobs_container_searcher.settings_data_summary": "%s containers | %s items remembered on this server",
 	"screen.noobs_container_searcher.settings_irreversible": "This cannot be undone.",

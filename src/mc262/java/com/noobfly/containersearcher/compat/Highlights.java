@@ -5,6 +5,7 @@ import com.mojang.math.Axis;
 import com.noobfly.containersearcher.ContainerRecord;
 import com.noobfly.containersearcher.ContainerSearcherClient;
 import com.noobfly.containersearcher.HighlightManager;
+import com.noobfly.containersearcher.ModSettings;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -24,10 +25,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.List;
 
 public final class Highlights {
-	// Vanilla eşya çerçevesiyle birebir aynı yüzey ofseti.
 	private static final double FRAME_SURFACE_OFFSET = 0.46875D;
 	private static final float ITEM_DISPLAY_SCALE = 0.4F;
-	// Tam parlaklık: karanlık depolarda bile önizleme okunaklı kalsın.
 	private static final int FULL_BRIGHT_LIGHT = 0xF000F0;
 
 	private Highlights() {
@@ -50,7 +49,7 @@ public final class Highlights {
 		});
 		LevelRenderEvents.COLLECT_SUBMITS.register(context -> {
 			Minecraft client = Minecraft.getInstance();
-			if (client.level == null || client.player == null) {
+			if (!ModSettings.itemDisplayEnabled() || client.level == null || client.player == null) {
 				return;
 			}
 			List<ContainerRecord> records = ContainerSearcherClient.knownRecords(client);

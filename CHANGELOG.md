@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.12
+
+### Added
+
+- Added support for Minecraft 26.3, in the same single universal jar.
+- Added an "Item display" toggle to the Settings tab to turn the floating item preview in front of containers on or off (on by default). The preview now works on every supported version instead of only 26.2.
+- Added saving of the selected books in the Librarian Reroll tab. The selection survives closing the GUI or cancelling a reroll by accident, and when a wanted enchantment is obtained only that book is deselected, so the rest stay selected for the next villager.
+
+### Fixed
+
+- Fixed container highlight outlines drifting away from the container when moving the camera on 1.21.1, 1.21.4 and 1.21.8.
+- Fixed the search GUI being covered by a blur on 1.21.1 and 1.21.4.
+- Fixed "Search held item" stealing the S key (move backward) on 1.21.1 - 1.21.11 by changing its default key to R. If you already used the mod, rebind it in Controls.
+
+## 1.11
+
+### Added
+
+- Added a redesigned search GUI: the sidebar is replaced by a tab bar (Search, Librarian Reroll, Settings) with a cleaner, rounded layout. The reroll page is now a tab in the same screen on every supported version.
+- Added a Locate button that appears when hovering a result, plus a distance badge on every result and a durability percentage for damaged items.
+- Added a sort button (by name or by distance) and clickable active-filter chips that can be removed one by one or all at once.
+- Added quick filter chips, a clickable "Try:" row for search syntax (name:, lore:, durability:<50, enchanted), and distance preset chips next to the slider.
+- Added a requirements checklist (lectern and axe in hotbar), a status box, and a selected books list to the Librarian Reroll tab. Enchantments are now shown as cards in a grid.
+- Added a saved data summary (containers and items) to the Settings tab.
+
 ## 1.10
 
 ### Fixed

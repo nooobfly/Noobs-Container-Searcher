@@ -42,7 +42,7 @@ tasks.named("jar") {
 
 // Tek jar sekiz Minecraft sürümünü birden destekliyor; Modrinth/CurseForge'a
 // tek dosya, tüm sürümler birden etiketlenerek yüklenir.
-def supportedGameVersions = ["1.21.1", "1.21.4", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.1.2", "26.2"]
+def supportedGameVersions = ["1.21.1", "1.21.4", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.1.2", "26.2", "26.3"]
 def releaseNotesFile = file("../release-notes.md")
 def releaseNotes = providers.provider {
 	releaseNotesFile.exists() ? releaseNotesFile.getText("UTF-8") : "No changelog provided."

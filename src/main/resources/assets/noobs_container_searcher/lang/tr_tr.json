@@ -98,6 +98,8 @@
 	"screen.noobs_container_searcher.footer_reroll": "İstediğin büyülü kitabı seç; mod, kütüphaneci o kitabı satana kadar yeniler",
 	"screen.noobs_container_searcher.footer_settings": "Değişiklikler anında uygulanır",
 	"screen.noobs_container_searcher.settings_distance_title": "Arama mesafesi",
+	"screen.noobs_container_searcher.settings_item_display_title": "Eşya önizleme",
+	"screen.noobs_container_searcher.settings_item_display_hint": "Konteynerlerin önünde yüzen eşya önizlemesini göster.",
 	"screen.noobs_container_searcher.settings_distance_hint": "Sadece sana bu mesafeden yakın konteynerleri göster.",
 	"screen.noobs_container_searcher.settings_data_summary": "Bu sunucuda %s konteyner | %s eşya kayıtlı",
 	"screen.noobs_container_searcher.settings_irreversible": "Bu işlem geri alınamaz.",

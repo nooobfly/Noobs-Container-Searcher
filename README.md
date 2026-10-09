@@ -2,7 +2,7 @@
 
 A client-side Fabric mod that remembers the chests, furnaces, barrels and villager trades you open, and lets you search through them later. Nothing needs to be installed on the server.
 
-Supported versions: 1.21.1, 1.21.4, 1.21.8, 1.21.10, 1.21.11, 26.1, 26.1.2, 26.2
+Supported versions: 1.21.1, 1.21.4, 1.21.8, 1.21.10, 1.21.11, 26.1, 26.1.2, 26.2, 26.3
 
 ## How it works
 
@@ -28,7 +28,3 @@ Results are printed in chat with counts and clickable coordinates, and matching 
 `-Pmc` picks the Minecraft version, and `build-all.ps1` builds all of them. Jars end up in `build/libs`. `mod_version` is bumped after every build, add `-PnoBump` to skip that.
 
 The mod logic lives in `src/client`, and the version-specific parts are in the `src/mc*` folders. Each version's settings are in `gradle/mc-<version>.properties`.
-
-External Downloads:
-https://modrinth.com/mod/noobs-container-searcher
-https://www.curseforge.com/minecraft/mc-mods/noobs-container-searcher

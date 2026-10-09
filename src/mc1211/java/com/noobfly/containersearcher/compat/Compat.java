@@ -36,4 +36,12 @@ public final class Compat {
 			client.gameMode.interact(client.player, target, hand);
 		}
 	}
+
+	public static void swing(LocalPlayer player) {
+		player.swing(InteractionHand.MAIN_HAND);
+	}
+
+	public static boolean isLeftButton(int b) {
+		return b == 0;
+	}
 }

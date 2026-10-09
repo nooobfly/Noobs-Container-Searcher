@@ -10,15 +10,29 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.phys.Vec3;
+import com.mojang.math.Axis;
+import com.noobfly.containersearcher.ContainerRecord;
+import com.noobfly.containersearcher.ContainerSearcherClient;
+import com.noobfly.containersearcher.ModSettings;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
 public final class Highlights {
+	private static final double FRAME_SURFACE_OFFSET = 0.46875D;
+	private static final float ITEM_DISPLAY_SCALE = 0.4F;
+	private static final int FULL_BRIGHT_LIGHT = 0xF000F0;
+
 	private Highlights() {
 	}
 
 	public static void register(HighlightManager manager) {
-		WorldRenderEvents.END.register(context -> {
+		WorldRenderEvents.LAST.register(context -> {
 			Minecraft client = Minecraft.getInstance();
 			if (Compat.screen(client) != null) {
 				return;
@@ -50,6 +64,53 @@ public final class Highlights {
 				);
 			}
 			bufferSource.endBatch(RenderType.lines());
+		});
+
+		WorldRenderEvents.AFTER_ENTITIES.register(context -> {
+			Minecraft client = Minecraft.getInstance();
+			if (!ModSettings.itemDisplayEnabled() || client.level == null || client.player == null) {
+				return;
+			}
+			if (!(context.consumers() instanceof MultiBufferSource.BufferSource bufferSource)) {
+				return;
+			}
+			List<ContainerRecord> records = ContainerSearcherClient.knownRecords(client);
+			List<HighlightManager.ItemDisplay> displays = manager.itemDisplaysFor(
+				client, records, ContainerSearcherClient.dimensionKey(client)
+			);
+			if (displays.isEmpty()) {
+				return;
+			}
+
+			Vec3 cameraPos = context.camera().getPosition();
+			PoseStack poseStack = context.matrixStack();
+			var itemRenderer = client.getItemRenderer();
+			long secondsElapsed = System.currentTimeMillis() / 1000L;
+
+			for (HighlightManager.ItemDisplay display : displays) {
+				List<String> itemIds = display.itemIds();
+				String itemId = itemIds.get((int) (secondsElapsed % itemIds.size()));
+				ResourceLocation identifier = ResourceLocation.tryParse(itemId);
+				if (identifier == null || !BuiltInRegistries.ITEM.containsKey(identifier)) {
+					continue;
+				}
+				ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(identifier));
+
+				Direction dir = display.direction();
+				Vec3 center = display.center();
+				double posX = center.x() + dir.getStepX() * FRAME_SURFACE_OFFSET;
+				double posY = center.y() + dir.getStepY() * FRAME_SURFACE_OFFSET;
+				double posZ = center.z() + dir.getStepZ() * FRAME_SURFACE_OFFSET;
+				float facingYRot = 180.0F - dir.toYRot();
+
+				poseStack.pushPose();
+				poseStack.translate(posX - cameraPos.x(), posY - cameraPos.y(), posZ - cameraPos.z());
+				poseStack.mulPose(Axis.YP.rotationDegrees(facingYRot));
+				poseStack.scale(ITEM_DISPLAY_SCALE, ITEM_DISPLAY_SCALE, ITEM_DISPLAY_SCALE);
+				itemRenderer.renderStatic(stack, ItemDisplayContext.FIXED, FULL_BRIGHT_LIGHT, OverlayTexture.NO_OVERLAY, poseStack, bufferSource, client.level, 0);
+				poseStack.popPose();
+			}
+			bufferSource.endBatch();
 		});
 	}
 }

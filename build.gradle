@@ -1,14 +1,14 @@
-// Tek kaynak ağacı, iki Minecraft hedefi.
-//   .\gradlew.bat build -Pmc=26.2      (varsayılan)
+// One source tree, several Minecraft targets.
+//   .\gradlew.bat build -Pmc=26.2      (default)
 //   .\gradlew.bat build -Pmc=1.21.11
-// Her hedefin Loom sürümü, Java seviyesi ve compat kaynak klasörü
-// gradle/mc-<sürüm>.properties dosyasından okunur.
+// Each target's Loom version, Java level and compat source folder
+// are read from gradle/mc-<version>.properties.
 buildscript {
 	def selectedMc = project.hasProperty("mc") ? project.property("mc").toString() : "26.2"
 	def selectedProps = new Properties()
 	def mcPropsFile = new File(rootDir, "gradle/mc-${selectedMc}.properties")
 	if (!mcPropsFile.exists()) {
-		throw new GradleException("Desteklenmeyen Minecraft sürümü: ${selectedMc} (${mcPropsFile} yok)")
+		throw new GradleException("Unsupported Minecraft version: ${selectedMc} (${mcPropsFile} not found)")
 	}
 	mcPropsFile.withInputStream { selectedProps.load(it) }
 	project.ext.mc = selectedMc
@@ -40,28 +40,28 @@ base {
 	archivesName = project.archives_base_name
 }
 
-// noobs-container-searcher.jar (sürüm adda yok: yeni jar mods klasöründe
-// eskisinin üzerine yazar, kullanıcı elinde birikmiş eski sürümler kalmaz).
+// noobs-container-searcher.jar (no version in the name: the new jar overwrites the old one in the mods folder,
+// so users do not end up with stale versions piling up).
 tasks.withType(AbstractArchiveTask).configureEach {
 	archiveVersion = ""
 }
 
-// Başarılı her build'den sonra mod_version'ın son sayısı bir artar.
-// build-all.ps1 iki hedefi aynı sürümle derleyip sonunda tek sefer artırmak
-// için -PnoBump kullanır.
+// After every successful build the last number of mod_version is incremented.
+// build-all.ps1 builds all targets with the same version and bumps once at the end
+// by using -PnoBump.
 def bumpModVersion = tasks.register("bumpModVersion") {
-	description = "gradle.properties içindeki mod_version değerini bir artırır."
+	description = "Increments mod_version in gradle.properties by one."
 	doLast {
 		def propertiesFile = file("gradle.properties")
 		def text = propertiesFile.getText("UTF-8")
 		def matcher = text =~ /(?m)^mod_version=(.*)$/
 		if (!matcher.find()) {
-			throw new GradleException("gradle.properties içinde mod_version satırı yok")
+			throw new GradleException("mod_version line not found in gradle.properties")
 		}
 		def current = matcher.group(1).trim()
 		def parts = current.tokenize(".")
 		if (!(parts[-1] ==~ /\d+/)) {
-			throw new GradleException("mod_version bir sayıyla bitmeli, bulunan: ${current}")
+			throw new GradleException("mod_version must end with a number, found: ${current}")
 		}
 		parts[-1] = (parts[-1].toInteger() + 1).toString()
 		def next = parts.join(".")
@@ -90,10 +90,10 @@ loom {
 	}
 }
 
-// Sürüme özel compat sınıfları (aynı paket ve sınıf adlarıyla) istemci
-// kaynak kümesine eklenir; paylaşılan kod yalnızca bu yüzeyi görür.
-// API'si çok değişen eski sürümler için paylaşılan kodun kendisi de
-// çatallanabilir (shared_source_set); belirtilmemişse varsayılan "client" kullanılır.
+// Version-specific compat classes (same package and class names) are added to the client
+// source set; the shared code only sees this surface.
+// For older versions whose API changed a lot, the shared code itself can also be
+// forked (shared_source_set); "client" is used by default.
 def sharedSourceSet = mcProps.getProperty("shared_source_set", "client")
 if (sharedSourceSet == "client") {
 	sourceSets.client.java.srcDir "src/${mcProps.compat_source_set}/java"
@@ -103,7 +103,7 @@ if (sharedSourceSet == "client") {
 
 dependencies {
 	minecraft "com.mojang:minecraft:${minecraftVersion}"
-	// 1.21.11 hâlâ obfuscated mod ad alanı kullanıyor, 26.2 kullanmıyor.
+	// 1.21.11 still uses the obfuscated mod namespace, 26.2 does not.
 	if (mcProps.use_mojang_mappings == "true") {
 		mappings loom.officialMojangMappings()
 	}
@@ -135,9 +135,9 @@ java {
 	targetCompatibility = javaVersion
 }
 
-// Modrinth ve CurseForge'a yayın. Değişiklik notu her yayından önce
-// release-notes.md dosyasına yazılır; iki platform da aynı metni kullanır.
-// Kimlik bilgileri ortam değişkenlerinden okunur (MODRINTH_PAT, CURSEFORGE_API).
+// Publishing to Modrinth and CurseForge. The changelog is written to
+// release-notes.md before every release; both platforms use the same text.
+// Credentials are read from environment variables (MODRINTH_PAT, CURSEFORGE_API).
 def releaseNotesFile = file("release-notes.md")
 def releaseNotes = providers.provider {
 	releaseNotesFile.exists() ? releaseNotesFile.getText("UTF-8") : "No changelog provided."
@@ -167,9 +167,9 @@ tasks.register("curseforge", net.darkhax.curseforgegradle.TaskPublishCurseForge)
 	mainFile.releaseType = "release"
 	mainFile.addModLoader("Fabric")
 	mainFile.addGameVersion(minecraftVersion)
-	// Not: CurseForgeGradle'da ek dosyalar (withAdditionalFile) kendi oyun sürümünü
-	// tanımlayamıyor ve üst dosyadan da miras almıyor, bu yüzden kaynak jar'ı burada
-	// yüklemiyoruz; sadece Modrinth tarafında ekleniyor.
+	// Note: additional files in CurseForgeGradle (withAdditionalFile) cannot define their own game version
+	// and do not inherit it from the parent file, so the sources jar is not
+	// uploaded here; it is only added on the Modrinth side.
 }
 tasks.named("curseforge") {
 	dependsOn tasks.named("build")

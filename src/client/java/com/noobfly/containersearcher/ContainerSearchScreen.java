@@ -669,6 +669,9 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private void renderRerollTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		if (seenSelectionRevision != ModSettings.get().selectionRevision()) {
+			syncSelection();
+		}
 		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.footer_reroll").getString(),
 			Component.translatable("screen.noobs_container_searcher.reroll_book_count", visibleChoices.size()).getString());
 
@@ -719,6 +722,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 					selectedChoices.clear();
 					selectedChoices.add(choice);
 				}
+				persistSelection();
 			});
 		}
 		g.disableScissor();
@@ -754,7 +758,10 @@ public final class ContainerSearchScreen extends CompatScreen {
 			g.text(font, trim(choice.name, w - 30), x + 12, y + 5, TEXT_PRIMARY);
 			boolean xHover = hovered(x + w - 16, y, 16, 18);
 			icon(g, ICON_X, x + w - 12, y + 8, xHover ? TEXT_PRIMARY : TEXT_MUTED);
-			hit(x + w - 16, y, 16, 18, () -> selectedChoices.remove(choice));
+			hit(x + w - 16, y, 16, 18, () -> {
+				selectedChoices.remove(choice);
+				persistSelection();
+			});
 			y += 21;
 			shown++;
 		}
@@ -762,7 +769,10 @@ public final class ContainerSearchScreen extends CompatScreen {
 			String clear = Component.translatable("screen.noobs_container_searcher.clear_all").getString();
 			boolean hover = hovered(x, y, font.width(clear), 12);
 			g.text(font, clear, x, y + 2, hover ? TEXT_PRIMARY : ACCENT_HOVER);
-			hit(x, y, font.width(clear), 12, selectedChoices::clear);
+			hit(x, y, font.width(clear), 12, () -> {
+				selectedChoices.clear();
+				persistSelection();
+			});
 			y += 16;
 		}
 		y += 6;
@@ -827,7 +837,19 @@ public final class ContainerSearchScreen extends CompatScreen {
 		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_distance_hint").getString(), cw - 28), bx + 14, by + 26, TEXT_MUTED);
 		renderDistanceRow(g, bx + 14, by + 46, cw - 28);
 
-		int y2 = by + 4 + 72 + 10;
+		int yd = by + 4 + 72 + 10;
+		card(g, bx, yd, cw, 44, SURFACE, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_item_display_title").withStyle(ChatFormatting.BOLD), bx + 14, yd + 10, TEXT_PRIMARY);
+		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_item_display_hint").getString(), cw - 28 - 44), bx + 14, yd + 23, TEXT_MUTED);
+		boolean displayOn = ModSettings.itemDisplayEnabled();
+		int tx = bx + cw - 14 - 30;
+		int ty = yd + 14;
+		boolean toggleHover = hovered(tx, ty, 30, 16);
+		rfill(g, tx, ty, 30, 16, displayOn ? (toggleHover ? ACCENT_HOVER : ACCENT) : (toggleHover ? BORDER_HI : BORDER), 1);
+		rfill(g, displayOn ? tx + 16 : tx + 2, ty + 2, 12, 12, TEXT_PRIMARY, 1);
+		hit(tx, ty, 30, 16, () -> ModSettings.get().setItemDisplay(!ModSettings.itemDisplayEnabled()));
+
+		int y2 = yd + 44 + 10;
 		card(g, bx, y2, cw, 70, SURFACE, BORDER);
 		g.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD), bx + 14, y2 + 12, TEXT_PRIMARY);
 		int items = 0;
@@ -1034,7 +1056,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private boolean click(double mouseX, double mouseY, int button, boolean ctrl) {
-		if (button != 0) {
+		if (!Compat.isLeftButton(button)) {
 			return false;
 		}
 		ctrlDown = ctrl;
@@ -1153,6 +1175,31 @@ public final class ContainerSearchScreen extends CompatScreen {
 		}
 		allChoices.sort(Comparator.comparing(choice -> normalizedSearch(choice.name)));
 		rebuildChoices();
+		syncSelection();
+	}
+
+	private int seenSelectionRevision = -1;
+
+	private void persistSelection() {
+		List<String> entries = new ArrayList<>();
+		for (EnchantmentChoice choice : selectedChoices) {
+			entries.add(choice.id + "|" + choice.level);
+		}
+		ModSettings settings = ModSettings.get();
+		settings.setRerollSelection(entries);
+		seenSelectionRevision = settings.selectionRevision();
+	}
+
+	private void syncSelection() {
+		ModSettings settings = ModSettings.get();
+		seenSelectionRevision = settings.selectionRevision();
+		Set<String> saved = new java.util.HashSet<>(settings.rerollSelection());
+		selectedChoices.clear();
+		for (EnchantmentChoice choice : allChoices) {
+			if (saved.contains(choice.id + "|" + choice.level)) {
+				selectedChoices.add(choice);
+			}
+		}
 	}
 
 	private void rebuildChoices() {

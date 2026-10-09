@@ -67,7 +67,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 	private static final int VILLAGER_STALE_CONFIRMATIONS = 5;
 	private static final double VERIFY_RADIUS = 48.0D;
 	private static final double VILLAGER_VERIFY_RADIUS = 32.0D;
-	// Dünyaya girdikten sonra chunkler ve varlıklar yerleşene kadar hiçbir kayıt silinmez.
+	// No record is deleted after joining a world until chunks and entities have settled.
 	private static final long WORLD_SETTLE_MS = 15_000L;
 	private static final double LOOK_REACH = 6.0D;
 
@@ -143,7 +143,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 			return;
 		}
 		staleRecordCheckTicks = 0;
-		// Dünyaya/boyuta yeni girildiyse chunkler ve varlıklar tam ulaşmadan silme yapma.
+		// Do not delete anything right after joining a world/dimension, before chunks and entities have loaded.
 		if (System.currentTimeMillis() < verifyReadyAt) {
 			return;
 		}
@@ -163,7 +163,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 			Boolean missing = record.entityUuid != null && !record.entityUuid.isBlank()
 				? isVillagerMissing(client, record)
 				: isContainerMissing(client, record);
-			// null: şu an güvenilir bir karar verilemiyor (uzak, chunk yüklü değil vb.)
+			// null: no reliable decision can be made right now (far away, chunk not loaded, etc.)
 			if (missing == null || !missing) {
 				STALE_STRIKES.remove(key);
 				continue;
@@ -220,7 +220,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 				record.x = currentPos.getX();
 				record.y = currentPos.getY();
 				record.z = currentPos.getZ();
-				// Köylüler sürekli hareket eder; her adımda diske yazma.
+				// Villagers move constantly; do not write to disk on every step.
 				DATABASE.putDeferred(record);
 			}
 			return false;
@@ -251,7 +251,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 		if (secondaryPos == null) {
 			return false;
 		}
-		// Çift sandık chunk sınırını geçebilir; iki yarısı da doğrulanabilir olmadan karar verme.
+		// A double chest can span a chunk border; do not decide until both halves can be verified.
 		if (!isVerifiable(client, secondaryPos)) {
 			return null;
 		}
@@ -297,7 +297,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 
 	private static void markContainerBehindEntity(Entity player, Level level, Entity entity) {
 		if (!level.isClientSide()) {
-			// Tek oyunculuda olay sunucu tarafında da tetiklenir; istemci durumunu bozma.
+			// In singleplayer the event also fires on the server side; do not corrupt client state.
 			return;
 		}
 		BlockPos looked = pickedContainerPos(player, level);
@@ -529,7 +529,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 		DATABASE.put(record);
 		lastCapturedContainerId = menu.containerId;
 		lastCapturedFingerprint = fingerprint;
-		LOGGER.debug("{} meslekli {} köylüsünün takasları kaydedildi", profession, record.entityUuid);
+		LOGGER.debug("Saved trades of {} villager {}", profession, record.entityUuid);
 	}
 
 	private static Villager findVillager(Minecraft client, String uuidText) {
@@ -632,7 +632,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 		return y != 0 ? y : Integer.compare(left.getZ(), right.getZ());
 	}
 
-	static String dimensionKey(Minecraft client) {
+	public static String dimensionKey(Minecraft client) {
 		return client.level.dimension().location().toString();
 	}
 
@@ -644,6 +644,10 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 			return "singleplayer:" + client.getSingleplayerServer().getWorldData().getLevelName();
 		}
 		return "singleplayer:unknown";
+	}
+
+	public static List<ContainerRecord> knownRecords(Minecraft client) {
+		return DATABASE.allForServer(serverKey(client));
 	}
 
 	public static boolean isVillagerHighlighted(Entity entity) {

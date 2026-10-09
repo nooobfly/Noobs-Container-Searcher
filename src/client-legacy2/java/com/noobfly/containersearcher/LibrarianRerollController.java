@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
+import com.mojang.blaze3d.platform.InputConstants;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.UUID;
@@ -148,7 +149,7 @@ public final class LibrarianRerollController {
 		selectSlot(client, lecternSlot);
 		if (now - lastActionAt >= 250L) {
 			client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, placementHit);
-			client.player.swing(InteractionHand.MAIN_HAND);
+			Compat.swing(client.player);
 			lastActionAt = now;
 			if (deadline == 0L) {
 				deadline = now + 1_500L;
@@ -185,7 +186,7 @@ public final class LibrarianRerollController {
 		if (now - lastActionAt >= 500L) {
 			ContainerSearcherClient.prepareVillagerCapture(villager.getUUID());
 			Compat.interact(client, villager, InteractionHand.MAIN_HAND);
-			client.player.swing(InteractionHand.MAIN_HAND);
+			Compat.swing(client.player);
 			lastActionAt = now;
 		}
 		if (now >= deadline) {
@@ -237,7 +238,7 @@ public final class LibrarianRerollController {
 		} else {
 			client.gameMode.continueDestroyBlock(lecternPos, face);
 		}
-		client.player.swing(InteractionHand.MAIN_HAND);
+		Compat.swing(client.player);
 		if (now >= deadline) {
 			client.gameMode.stopDestroyBlock();
 			stop(true, "message.noobs_container_searcher.reroll_break_failed");
@@ -331,6 +332,9 @@ public final class LibrarianRerollController {
 
 	private void succeed(Minecraft client) {
 		state = State.SUCCESS;
+		if (matchedBook != null) {
+			ModSettings.get().removeRerollBook(matchedBook.enchantment().toString(), matchedBook.level());
+		}
 		restoreOriginalSlot(client);
 		message("message.noobs_container_searcher.reroll_success", desiredName(client, matchedBook), attempts);
 	}
@@ -346,10 +350,10 @@ public final class LibrarianRerollController {
 	}
 
 	private static boolean isAllowedDuringReroll(Minecraft client, int key, int scancode, int mods) {
-		if (key == GLFW.GLFW_KEY_ESCAPE
+		if (key == InputConstants.KEY_ESCAPE
 			|| (mods & GLFW.GLFW_MOD_ALT) != 0
-			|| key == GLFW.GLFW_KEY_LEFT_ALT
-			|| key == GLFW.GLFW_KEY_RIGHT_ALT
+			|| key == InputConstants.KEY_LALT
+			|| key == InputConstants.KEY_RALT
 			|| Compat.screen(client) instanceof ChatScreen) {
 			return true;
 		}

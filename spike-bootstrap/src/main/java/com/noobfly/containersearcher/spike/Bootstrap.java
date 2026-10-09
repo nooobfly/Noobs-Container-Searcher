@@ -30,7 +30,8 @@ public final class Bootstrap implements PreLaunchEntrypoint, ClientModInitialize
 		"1.21.11", "/impl/mc121.jar",
 		"26.1", "/impl/mc261.jar",
 		"26.1.2", "/impl/mc2612.jar",
-		"26.2", "/impl/mc262.jar"
+		"26.2", "/impl/mc262.jar",
+		"26.3", "/impl/mc263.jar"
 	);
 
 	private static ClassLoader targetClassLoader;
