@@ -1,6 +1,6 @@
 # Noob's Container Searcher
 
-A client-side Fabric mod that remembers the chests, furnaces, barrels and villager trades you open, and lets you search through them later. Nothing needs to be installed on the server.
+A client-side Fabric and NeoForge mod that remembers the chests, furnaces, barrels and villager trades you open, and lets you search through them later. Nothing needs to be installed on the server.
 
 Supported versions: 1.21.1, 1.21.4, 1.21.8, 1.21.10, 1.21.11, 26.1, 26.1.2, 26.2, 26.3
 

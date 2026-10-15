@@ -1,3 +1,15 @@
+buildscript {
+	repositories { mavenCentral() }
+	dependencies { classpath "org.ow2.asm:asm-commons:9.8" }
+}
+
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.commons.ClassRemapper
+import org.objectweb.asm.commons.Remapper
+
 plugins {
 	id "java"
 	id "com.modrinth.minotaur" version "2.9.0"
@@ -12,12 +24,15 @@ version = rootProps.mod_version
 
 repositories {
 	maven { url = "https://maven.fabricmc.net/" }
+	maven { url = "https://maven.neoforged.net/releases" }
 	mavenCentral()
 }
 
 dependencies {
 	compileOnly "net.fabricmc:fabric-loader:0.19.3"
 	compileOnly "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7"
+	compileOnly("net.neoforged.fancymodloader:loader:4.0.45") { transitive = false }
+	compileOnly("net.neoforged:bus:8.0.5") { transitive = false }
 }
 
 java {
@@ -29,18 +44,76 @@ processResources {
 	// Dil dosyaları ve ikon ana projeden alınır; kopyaları elle güncel tutmaya gerek yok.
 	from("../src/main/resources/assets") { into "assets" }
 	inputs.property "version", project.version
-	filesMatching("fabric.mod.json") {
+	filesMatching(["fabric.mod.json", "META-INF/neoforge.mods.toml"]) {
 		expand("version": project.version)
 	}
 }
 
+// The NeoForge build of every Minecraft version (neoforge-impl/<slot>.jar) is copied into
+// this jar with its classes moved to com.noobfly.containersearcher.nf.<tag>, because the
+// class names are identical between versions. Each version also gets its own mixin config
+// that NeoForgeMixinGate switches on only for the matching game version.
+def neoForgeSlots = [
+	mc1211: "v1_21_1", mc1214: "v1_21_4", mc1218: "v1_21_8", mc1210: "v1_21_10", mc121: "v1_21_11",
+	mc261: "v26_1", mc2612: "v26_1_2", mc262: "v26_2", mc263: "v26_3"
+]
+def relocatedDir = layout.buildDirectory.dir("neoforge-relocated")
+
+def relocateNeoForge = tasks.register("relocateNeoForge") {
+	inputs.dir("neoforge-impl")
+	outputs.dir(relocatedDir)
+	doLast {
+		def out = relocatedDir.get().asFile
+		delete out
+		def base = "com/noobfly/containersearcher/"
+		neoForgeSlots.each { slot, tag ->
+			def target = base + "nf/" + tag + "/"
+			def remapper = new Remapper() {
+				@Override
+				String map(String name) {
+					return name.startsWith(base) ? target + name.substring(base.length()) : name
+				}
+			}
+			new java.util.zip.ZipFile(file("neoforge-impl/${slot}.jar")).withCloseable { zip ->
+				zip.entries().each { entry ->
+					if (entry.isDirectory()) {
+						return
+					}
+					if (entry.name.endsWith(".class") && entry.name.startsWith(base)) {
+						def writer = new ClassWriter(0)
+						// the standalone @Mod class must not stay annotated, NeoForgeBootstrap is the only entry point
+						def noMod = new ClassVisitor(Opcodes.ASM9, writer) {
+							@Override
+							org.objectweb.asm.AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+								return descriptor == "Lnet/neoforged/fml/common/Mod;" ? null : super.visitAnnotation(descriptor, visible)
+							}
+						}
+						new ClassReader(zip.getInputStream(entry).bytes).accept(new ClassRemapper(noMod, remapper), 0)
+						def dest = new File(out, target + entry.name.substring(base.length()))
+						dest.parentFile.mkdirs()
+						dest.bytes = writer.toByteArray()
+					} else if (entry.name == "noobs_container_searcher.client.mixins.json") {
+						def json = new groovy.json.JsonSlurper().parse(zip.getInputStream(entry))
+						json.package = json.package.replace("com.noobfly.containersearcher.", "com.noobfly.containersearcher.nf." + tag + ".")
+						json.plugin = "com.noobfly.containersearcher.spike.NeoForgeMixinGate"
+						json.remove("refmap")
+						new File(out, "noobs_container_searcher.nf_${tag}.mixins.json").text =
+							groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+					}
+				}
+			}
+		}
+	}
+}
+
 tasks.named("jar") {
+	from(relocateNeoForge)
 	archiveBaseName = "noobs-container-searcher"
 	archiveVersion = ""
 	archiveClassifier = ""
 }
 
-// Tek jar sekiz Minecraft sürümünü birden destekliyor; Modrinth/CurseForge'a
+// Tek jar dokuz Minecraft sürümünü ve Fabric + NeoForge'u birden destekliyor; Modrinth/CurseForge'a
 // tek dosya, tüm sürümler birden etiketlenerek yüklenir.
 def supportedGameVersions = ["1.21.1", "1.21.4", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.1.2", "26.2", "26.3"]
 def releaseNotesFile = file("../release-notes.md")
@@ -55,7 +128,7 @@ modrinth {
 	versionType = "release"
 	uploadFile = tasks.jar
 	gameVersions = supportedGameVersions
-	loaders = ["fabric"]
+	loaders = ["fabric", "neoforge"]
 	changelog = releaseNotes
 }
 
@@ -67,6 +140,7 @@ tasks.register("curseforge", net.darkhax.curseforgegradle.TaskPublishCurseForge)
 	mainFile.changelogType = "markdown"
 	mainFile.releaseType = "release"
 	mainFile.addModLoader("Fabric")
+	mainFile.addModLoader("NeoForge")
 	supportedGameVersions.each { mainFile.addGameVersion(it) }
 }
 tasks.named("curseforge") {

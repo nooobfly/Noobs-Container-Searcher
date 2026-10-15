@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.13
+
+### Added
+
+- Added NeoForge support. The same single universal jar now runs on both Fabric and NeoForge, on every supported Minecraft version (1.21.1 - 26.3). NeoForge needs no Fabric API.
+
+### Changed
+
+- The search GUI now has a maximum size, so it no longer stretches over the whole screen at small GUI scales (like GUI size 1).
+
 ## 1.12
 
 ### Added
