@@ -1,3 +1,8 @@
 // Loom, sürüme göre değişen bir sürümde olduğu için build.gradle içindeki
 // buildscript classpath'inden yüklenir; burada plugin yönetimi gerekmiyor.
 rootProject.name = "noobs-container-searcher"
+
+// -Ploader=neoforge switches to build-neoforge.gradle, Fabric otherwise
+if (providers.gradleProperty("loader").getOrElse("fabric") == "neoforge") {
+	rootProject.buildFileName = "build-neoforge.gradle"
+}

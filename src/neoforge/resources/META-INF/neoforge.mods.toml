@@ -1,0 +1,28 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "MIT"
+
+[[mods]]
+modId = "noobs_container_searcher"
+version = "${version}"
+displayName = "Noob's Container Searcher"
+authors = "NoobFly"
+description = '''Search items in containers you have opened before with a client-side command or keybind.'''
+iconFile = "assets/noobs_container_searcher/icon.png"
+
+[[mixins]]
+config = "noobs_container_searcher.client.mixins.json"
+
+[[dependencies.noobs_container_searcher]]
+modId = "neoforge"
+type = "required"
+versionRange = "[${neoforge_version},)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.noobs_container_searcher]]
+modId = "minecraft"
+type = "required"
+versionRange = "[${minecraft_version}]"
+ordering = "NONE"
+side = "CLIENT"

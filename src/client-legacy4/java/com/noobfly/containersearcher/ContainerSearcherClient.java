@@ -2,12 +2,8 @@ package com.noobfly.containersearcher;
 
 import com.noobfly.containersearcher.compat.Compat;
 import com.noobfly.containersearcher.compat.Highlights;
+import com.noobfly.containersearcher.compat.Platform;
 
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -57,7 +53,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-public final class ContainerSearcherClient implements ClientModInitializer {
+public final class ContainerSearcherClient {
 	public static final Logger LOGGER = LoggerFactory.getLogger("noobs-container-searcher");
 	private static final ContainerDatabase DATABASE = new ContainerDatabase();
 	private static final HighlightManager HIGHLIGHTS = new HighlightManager();
@@ -68,7 +64,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 	private static final int VILLAGER_STALE_CONFIRMATIONS = 5;
 	private static final double VERIFY_RADIUS = 48.0D;
 	private static final double VILLAGER_VERIFY_RADIUS = 32.0D;
-	// No record is deleted after joining a world until chunks and entities have settled.
+	// give chunks and entities a moment to load before we trust "container is gone"
 	private static final long WORLD_SETTLE_MS = 15_000L;
 	private static final double LOOK_REACH = 6.0D;
 
@@ -90,53 +86,55 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 	private static ClientLevel trackedLevel;
 	private static long verifyReadyAt;
 
-	@Override
 	public void onInitializeClient() {
 		DATABASE.load();
 		SEARCH.register();
-
-		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-			if (LIBRARIAN_REROLL.handleBlockUse(hitResult)) {
-				return InteractionResult.SUCCESS;
-			}
-			BlockPos clickedPos = hitResult.getBlockPos().immutable();
-			if (isContainerBlock(world, clickedPos)) {
-				markPendingContainer(world, clickedPos);
-			}
-			return InteractionResult.PASS;
-		});
-		UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-			if (LIBRARIAN_REROLL.handleEntityUse(entity)) {
-				return InteractionResult.SUCCESS;
-			}
-			if (entity instanceof Villager) {
-				pendingVillagerUuid = entity.getUUID();
-				pendingVillagerExpiresAt = System.currentTimeMillis() + 5_000L;
-			} else {
-				markContainerBehindEntity(player, world, entity);
-			}
-			return InteractionResult.PASS;
-		});
-
-		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			HIGHLIGHTS.tick(client);
-			trackLookedContainer(client);
-			captureOpenScreen(client);
-			removeStaleRecordsInLoadedChunks(client);
-			SEARCH.tick(client);
-			LIBRARIAN_REROLL.tick(client);
-		});
 		Highlights.register(HIGHLIGHTS);
-		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-			if (screen instanceof AbstractContainerScreen<?>) {
-				ScreenEvents.remove(screen).register(removedScreen -> {
-					SearchController.clearActiveItem();
-					openContainerPos = null;
-					openDuplicatePos = null;
-					pendingVillagerUuid = null;
-				});
-			}
-		});
+		Platform.registerEvents(this);
+	}
+
+	// right-click on a block
+	public InteractionResult onUseBlock(Level world, BlockHitResult hitResult) {
+		if (LIBRARIAN_REROLL.handleBlockUse(hitResult)) {
+			return InteractionResult.SUCCESS;
+		}
+		BlockPos clickedPos = hitResult.getBlockPos().immutable();
+		if (isContainerBlock(world, clickedPos)) {
+			markPendingContainer(world, clickedPos);
+		}
+		return InteractionResult.PASS;
+	}
+
+	// right-click on an entity (item frames, villagers...)
+	public InteractionResult onUseEntity(Entity player, Level world, Entity entity) {
+		if (LIBRARIAN_REROLL.handleEntityUse(entity)) {
+			return InteractionResult.SUCCESS;
+		}
+		if (entity instanceof Villager) {
+			pendingVillagerUuid = entity.getUUID();
+			pendingVillagerExpiresAt = System.currentTimeMillis() + 5_000L;
+		} else {
+			markContainerBehindEntity(player, world, entity);
+		}
+		return InteractionResult.PASS;
+	}
+
+	// runs every client tick
+	public void onClientTick(Minecraft client) {
+		HIGHLIGHTS.tick(client);
+		trackLookedContainer(client);
+		captureOpenScreen(client);
+		removeStaleRecordsInLoadedChunks(client);
+		SEARCH.tick(client);
+		LIBRARIAN_REROLL.tick(client);
+	}
+
+	// a container screen just closed, so we can save what was inside
+	public void onContainerScreenClosed() {
+		SearchController.clearActiveItem();
+		openContainerPos = null;
+		openDuplicatePos = null;
+		pendingVillagerUuid = null;
 	}
 
 	private static void removeStaleRecordsInLoadedChunks(Minecraft client) {
@@ -144,7 +142,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 			return;
 		}
 		staleRecordCheckTicks = 0;
-		// Do not delete anything right after joining a world/dimension, before chunks and entities have loaded.
+		// just joined a world/dimension, nothing is loaded yet so don't delete anything
 		if (System.currentTimeMillis() < verifyReadyAt) {
 			return;
 		}
@@ -164,7 +162,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 			Boolean missing = record.entityUuid != null && !record.entityUuid.isBlank()
 				? isVillagerMissing(client, record)
 				: isContainerMissing(client, record);
-			// null: no reliable decision can be made right now (far away, chunk not loaded, etc.)
+			// null = can't tell right now (too far, chunk not loaded...)
 			if (missing == null || !missing) {
 				STALE_STRIKES.remove(key);
 				continue;
@@ -221,7 +219,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 				record.x = currentPos.getX();
 				record.y = currentPos.getY();
 				record.z = currentPos.getZ();
-				// Villagers move constantly; do not write to disk on every step.
+				// villagers never stand still, so don't hit the disk on every step
 				DATABASE.putDeferred(record);
 			}
 			return false;
@@ -252,7 +250,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 		if (secondaryPos == null) {
 			return false;
 		}
-		// A double chest can span a chunk border; do not decide until both halves can be verified.
+		// a double chest can sit on a chunk border, wait until both halves are checkable
 		if (!isVerifiable(client, secondaryPos)) {
 			return null;
 		}
@@ -298,7 +296,7 @@ public final class ContainerSearcherClient implements ClientModInitializer {
 
 	private static void markContainerBehindEntity(Entity player, Level level, Entity entity) {
 		if (!level.isClientSide()) {
-			// In singleplayer the event also fires on the server side; do not corrupt client state.
+			// singleplayer fires this on the server thread too, ignore that one
 			return;
 		}
 		BlockPos looked = pickedContainerPos(player, level);

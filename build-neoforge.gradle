@@ -1,0 +1,91 @@
+// NeoForge build. Fabric is build.gradle and stays the default.
+//   ./gradlew build     -Ploader=neoforge -Pmc=1.21.11
+//   ./gradlew runClient -Ploader=neoforge -Pmc=1.21.11
+// uses the same gradle/mc-<version>.properties, neoforge_version picks the NeoForge build
+buildscript {
+	def selectedMc = project.hasProperty("mc") ? project.property("mc").toString() : "26.3"
+	def selectedProps = new Properties()
+	def mcPropsFile = new File(rootDir, "gradle/mc-${selectedMc}.properties")
+	if (!mcPropsFile.exists()) {
+		throw new GradleException("Unsupported Minecraft version: ${selectedMc} (${mcPropsFile} not found)")
+	}
+	mcPropsFile.withInputStream { selectedProps.load(it) }
+	project.ext.mc = selectedMc
+	project.ext.mcProps = selectedProps
+
+	repositories {
+		maven { url = "https://maven.neoforged.net/releases" }
+		gradlePluginPortal()
+	}
+	dependencies {
+		classpath "net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.148"
+	}
+}
+
+apply plugin: "java"
+apply plugin: "net.neoforged.moddev"
+
+def minecraftVersion = mcProps.minecraft_version
+def javaVersion = JavaVersion.toVersion(mcProps.java_version)
+
+version = project.mod_version
+group = project.maven_group
+
+// separate output dir per MC version so builds don't overwrite each other
+layout.buildDirectory = file("build/neoforge/${mc}")
+
+base {
+	archivesName = "${project.archives_base_name}-neoforge-mc${minecraftVersion}"
+}
+tasks.withType(AbstractArchiveTask).configureEach {
+	archiveVersion = ""
+}
+
+sourceSets.main.java.srcDirs = [
+	"src/${mcProps.getProperty('shared_source_set', 'client')}/java",
+	"src/${mcProps.compat_source_set}/java",
+	"src/${mcProps.compat_source_set}-neoforge/java",
+	"src/neoforge/java"
+]
+sourceSets.main.resources.srcDirs = ["src/main/resources", "src/neoforge/resources"]
+
+neoForge {
+	version = mcProps.neoforge_version
+
+	runs {
+		client {
+			client()
+			gameDirectory = file("run-neoforge/${mc}")
+		}
+	}
+
+	mods {
+		"noobs_container_searcher" {
+			sourceSet sourceSets.main
+		}
+	}
+}
+
+java {
+	toolchain.languageVersion = JavaLanguageVersion.of(mcProps.java_version.toInteger())
+	withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.release = Integer.parseInt(mcProps.java_version)
+	options.encoding = "UTF-8"
+}
+
+processResources {
+	def props = [
+		version          : project.version.toString(),
+		minecraft_version: minecraftVersion.toString(),
+		neoforge_version : mcProps.neoforge_version.toString().tokenize(".").take(2).join("."),
+		java_version     : mcProps.java_version.toString()
+	]
+	inputs.properties props
+	exclude "fabric.mod.json"
+	filesMatching("META-INF/neoforge.mods.toml") {
+		expand(props)
+	}
+}

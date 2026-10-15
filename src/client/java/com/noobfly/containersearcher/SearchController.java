@@ -1,14 +1,14 @@
 package com.noobfly.containersearcher;
 
-import com.noobfly.containersearcher.compat.ClientCmd;
 import com.noobfly.containersearcher.compat.Compat;
 import com.noobfly.containersearcher.compat.Gfx;
 import com.noobfly.containersearcher.compat.Keys;
+import com.noobfly.containersearcher.compat.Platform;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -31,14 +31,23 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public final class SearchController {
-	private static final SuggestionProvider<FabricClientCommandSource> ITEM_SUGGESTIONS = (context, builder) -> {
-		String remaining = builder.getRemainingLowerCase();
-		BuiltInRegistries.ITEM.keySet().stream()
-			.map(Identifier::toString)
-			.filter(id -> id.startsWith(remaining) || id.substring(id.indexOf(':') + 1).startsWith(remaining))
-			.forEach(builder::suggest);
-		return builder.buildFuture();
-	};
+	private static <S> SuggestionProvider<S> itemSuggestions() {
+		return (context, builder) -> {
+			String remaining = builder.getRemainingLowerCase();
+			BuiltInRegistries.ITEM.keySet().stream()
+				.map(Identifier::toString)
+				.filter(id -> id.startsWith(remaining) || id.substring(id.indexOf(':') + 1).startsWith(remaining))
+				.forEach(builder::suggest);
+			return builder.buildFuture();
+		};
+	}
+
+	// how a command replies to whoever ran it, differs per loader
+	public interface CommandMessenger<S> {
+		void feedback(S source, Component message);
+
+		void error(S source, Component message);
+	}
 
 	private static Identifier activeSearchItem;
 	private static String activeFilter;
@@ -59,10 +68,12 @@ public final class SearchController {
 		searchModifierKey = Keys.register("key.noobs_container_searcher.search_modifier", InputConstants.KEY_LALT);
 		openSearchMenuKey = Keys.register("key.noobs_container_searcher.open_search_menu", InputConstants.KEY_G);
 
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-			dispatcher.register(createCommand("containersearch"));
-			dispatcher.register(createCommand("csr"));
-		});
+		Platform.registerCommands(this);
+	}
+
+	public <S> void registerCommands(CommandDispatcher<S> dispatcher, CommandMessenger<S> messenger) {
+		dispatcher.register(createCommand("containersearch", messenger));
+		dispatcher.register(createCommand("csr", messenger));
 	}
 
 	public void tick(Minecraft client) {
@@ -105,23 +116,28 @@ public final class SearchController {
 		graphics.fill(x + 15, y + 1, x + 17, y + 15, color);
 	}
 
-	private LiteralArgumentBuilder<FabricClientCommandSource> createCommand(String name) {
-		return ClientCmd.literal(name)
-			.then(ClientCmd.literal("gui")
-				.executes(context -> openSearchMenu(context.getSource())))
-			.then(ClientCmd.literal("menu")
-				.executes(context -> openSearchMenu(context.getSource())))
-			.then(ClientCmd.literal("clearhighlight")
-				.executes(context -> clearHighlights(context.getSource())))
-			.then(ClientCmd.argument("item", IdentifierArgument.id())
-				.suggests(ITEM_SUGGESTIONS)
-				.executes(context -> search(context.getSource(), context.getArgument("item", Identifier.class), false))
-				.then(ClientCmd.literal("global")
-					.executes(context -> search(context.getSource(), context.getArgument("item", Identifier.class), true))));
+	private <S> LiteralArgumentBuilder<S> createCommand(String name, CommandMessenger<S> messenger) {
+		return LiteralArgumentBuilder.<S>literal(name)
+			.then(LiteralArgumentBuilder.<S>literal("gui")
+				.executes(context -> openSearchMenu(context.getSource(), messenger)))
+			.then(LiteralArgumentBuilder.<S>literal("menu")
+				.executes(context -> openSearchMenu(context.getSource(), messenger)))
+			.then(LiteralArgumentBuilder.<S>literal("clearhighlight")
+				.executes(context -> clearHighlights(context.getSource(), messenger)))
+			.then(RequiredArgumentBuilder.<S, Identifier>argument("item", IdentifierArgument.id())
+				.suggests(SearchController.<S>itemSuggestions())
+				.executes(context -> search(context.getSource(), context.getArgument("item", Identifier.class), false, messenger))
+				.then(LiteralArgumentBuilder.<S>literal("global")
+					.executes(context -> search(context.getSource(), context.getArgument("item", Identifier.class), true, messenger))));
 	}
 
-	private int search(FabricClientCommandSource source, Identifier identifier, boolean global) {
-		return search(identifier, global, source::sendFeedback, source::sendError);
+	private <S> int search(S source, Identifier identifier, boolean global, CommandMessenger<S> messenger) {
+		return search(
+			identifier,
+			global,
+			message -> messenger.feedback(source, message),
+			message -> messenger.error(source, message)
+		);
 	}
 
 	private void searchHeldItem(Minecraft client) {
@@ -194,14 +210,14 @@ public final class SearchController {
 		return matches.size();
 	}
 
-	private int clearHighlights(FabricClientCommandSource source) {
+	private <S> int clearHighlights(S source, CommandMessenger<S> messenger) {
 		highlights.clear(Minecraft.getInstance());
-		source.sendFeedback(Component.translatable("message.noobs_container_searcher.highlights_cleared"));
+		messenger.feedback(source, Component.translatable("message.noobs_container_searcher.highlights_cleared"));
 		return 1;
 	}
 
-	private int openSearchMenu(FabricClientCommandSource source) {
-		return openSearchMenu(Minecraft.getInstance(), source::sendError);
+	private <S> int openSearchMenu(S source, CommandMessenger<S> messenger) {
+		return openSearchMenu(Minecraft.getInstance(), message -> messenger.error(source, message));
 	}
 
 	private void openSearchMenu(Minecraft client) {

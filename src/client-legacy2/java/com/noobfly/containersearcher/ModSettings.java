@@ -2,7 +2,7 @@ package com.noobfly.containersearcher;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
+import com.noobfly.containersearcher.compat.Platform;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -14,8 +14,7 @@ import java.util.List;
 
 public final class ModSettings {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-	private static final Path FILE = FabricLoader.getInstance()
-		.getConfigDir()
+	private static final Path FILE = Platform.configDir()
 		.resolve("noobs-container-searcher")
 		.resolve("settings.json");
 

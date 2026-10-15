@@ -95,11 +95,14 @@ loom {
 // For older versions whose API changed a lot, the shared code itself can also be
 // forked (shared_source_set); "client" is used by default.
 def sharedSourceSet = mcProps.getProperty("shared_source_set", "client")
-if (sharedSourceSet == "client") {
-	sourceSets.client.java.srcDir "src/${mcProps.compat_source_set}/java"
-} else {
-	sourceSets.client.java.srcDirs = ["src/${sharedSourceSet}/java", "src/${mcProps.compat_source_set}/java"]
-}
+// compat = loader independent compat classes, <compat>-fabric = the Fabric API glue
+// src/fabric = Fabric Platform class (NeoForge has its own in build-neoforge.gradle)
+sourceSets.client.java.srcDirs = [
+	"src/${sharedSourceSet}/java",
+	"src/${mcProps.compat_source_set}/java",
+	"src/${mcProps.compat_source_set}-fabric/java",
+	"src/fabric/java"
+]
 
 dependencies {
 	minecraft "com.mojang:minecraft:${minecraftVersion}"

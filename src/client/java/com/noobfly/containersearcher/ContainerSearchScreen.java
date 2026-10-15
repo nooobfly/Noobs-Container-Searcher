@@ -81,6 +81,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private static final int CONTAINER_CYAN = 0xFF55D6D6;
 
 	private static final int MAX_DISTANCE = 1000;
+	private static final int MAX_PANEL_WIDTH = 800;
+	private static final int MAX_PANEL_HEIGHT = 480;
 	private static final int UNLIMITED_DISTANCE = -1;
 	private static final int[] DISTANCE_PRESETS = {100, 250, 500, UNLIMITED_DISTANCE};
 
@@ -1666,11 +1668,11 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private int panelWidth() {
-		return Math.min(width - 8, Math.max((int) Math.round(width * 0.85D), 520));
+		return Math.min(Math.min(width - 8, MAX_PANEL_WIDTH), Math.max((int) Math.round(width * 0.85D), 520));
 	}
 
 	private int panelHeight() {
-		return Math.min(height - 8, Math.max((int) Math.round(height * 0.85D), 300));
+		return Math.min(Math.min(height - 8, MAX_PANEL_HEIGHT), Math.max((int) Math.round(height * 0.85D), 300));
 	}
 
 	private boolean passesContainerType(ContainerRecord record, Map<String, ContainerTypeEntry> containerTypeMap) {

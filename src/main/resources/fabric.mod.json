@@ -12,7 +12,7 @@
 	"environment": "client",
 	"entrypoints": {
 		"client": [
-			"com.noobfly.containersearcher.ContainerSearcherClient"
+			"com.noobfly.containersearcher.ContainerSearcherFabric"
 		]
 	},
 	"mixins": [

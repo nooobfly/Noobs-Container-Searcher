@@ -3,7 +3,7 @@ package com.noobfly.containersearcher;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import net.fabricmc.loader.api.FabricLoader;
+import com.noobfly.containersearcher.compat.Platform;
 import net.minecraft.core.BlockPos;
 
 import java.io.IOException;
@@ -25,8 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class ContainerDatabase {
 	private static final Type DATA_TYPE = new TypeToken<Map<String, ContainerRecord>>() { }.getType();
 	private static final Gson GSON = new GsonBuilder().create();
-	private static final Path FILE = FabricLoader.getInstance()
-		.getConfigDir()
+	private static final Path FILE = Platform.configDir()
 		.resolve("noobs-container-searcher")
 		.resolve("containers.json");
 
