@@ -1,5 +1,6 @@
 package com.noobfly.containersearcher.mixin;
 
+import com.noobfly.containersearcher.ContainerChanges;
 import com.noobfly.containersearcher.SearchController;
 import com.noobfly.containersearcher.compat.Gfx;
 import net.minecraft.client.gui.GuiGraphics;
@@ -9,6 +10,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractContainerScreen.class)
 public abstract class AbstractContainerScreenMixin {
@@ -21,5 +23,18 @@ public abstract class AbstractContainerScreenMixin {
 		CallbackInfo callbackInfo
 	) {
 		SearchController.renderMatchingSlot(new Gfx(graphics), slot);
+	}
+
+	@Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
+	private void noobsContainerSearcher$scrollChanges(
+		double mouseX,
+		double mouseY,
+		double scrollX,
+		double scrollY,
+		CallbackInfoReturnable<Boolean> callbackInfo
+	) {
+		if (ContainerChanges.scroll(mouseX, mouseY, scrollY)) {
+			callbackInfo.setReturnValue(true);
+		}
 	}
 }

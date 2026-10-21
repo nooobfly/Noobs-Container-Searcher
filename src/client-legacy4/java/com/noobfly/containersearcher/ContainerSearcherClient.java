@@ -124,6 +124,7 @@ public final class ContainerSearcherClient {
 		HIGHLIGHTS.tick(client);
 		trackLookedContainer(client);
 		captureOpenScreen(client);
+		ContainerChanges.tick(client, DATABASE);
 		removeStaleRecordsInLoadedChunks(client);
 		SEARCH.tick(client);
 		LIBRARIAN_REROLL.tick(client);
@@ -132,6 +133,7 @@ public final class ContainerSearcherClient {
 	// a container screen just closed, so we can save what was inside
 	public void onContainerScreenClosed() {
 		SearchController.clearActiveItem();
+		ContainerChanges.clear();
 		openContainerPos = null;
 		openDuplicatePos = null;
 		pendingVillagerUuid = null;
@@ -174,7 +176,9 @@ public final class ContainerSearcherClient {
 				: STALE_CONFIRMATIONS;
 			if (strikes >= required) {
 				STALE_STRIKES.remove(key);
-				staleRecords.add(record);
+				if (!keepSurvivingHalf(client, record)) {
+					staleRecords.add(record);
+				}
 			}
 		}
 		STALE_STRIKES.keySet().retainAll(seenKeys);
@@ -195,6 +199,47 @@ public final class ContainerSearcherClient {
 			}
 		}
 		LOGGER.debug("Yuklu chunklarda artik bulunmayan {} konteyner kaydi silindi", staleRecords.size());
+	}
+
+	// one half of a double chest vanished: the other half is still a chest, so keep it as a single chest
+	// record (items stay, they are compared the next time it is opened) instead of forgetting it
+	private static boolean keepSurvivingHalf(Minecraft client, ContainerRecord record) {
+		BlockPos secondary = secondaryPos(record);
+		if (secondary == null) {
+			return false;
+		}
+		BlockPos primary = new BlockPos(record.x, record.y, record.z);
+		if (!isVerifiable(client, primary) || !isVerifiable(client, secondary)) {
+			return true;
+		}
+		boolean primaryLeft = record.containerType.equals(blockId(client, primary));
+		boolean secondaryLeft = record.containerType.equals(blockId(client, secondary));
+		if (primaryLeft == secondaryLeft) {
+			return false;
+		}
+		BlockPos kept = primaryLeft ? primary : secondary;
+		BlockPos gone = primaryLeft ? secondary : primary;
+		record.x = kept.getX();
+		record.y = kept.getY();
+		record.z = kept.getZ();
+		record.secondaryX = null;
+		record.secondaryY = null;
+		record.secondaryZ = null;
+		record.halfLost = true;
+		DATABASE.put(record, primaryLeft ? null : primary);
+		HIGHLIGHTS.removeAt(gone);
+		return true;
+	}
+
+	// the lid moves because of us, not because someone else is rummaging around
+	static boolean isOwnContainer(BlockPos primary, BlockPos secondary) {
+		return isSame(primary, openContainerPos) || isSame(primary, openDuplicatePos)
+			|| isSame(primary, pendingContainerPos) || isSame(primary, pendingDuplicatePos)
+			|| isSame(secondary, openContainerPos) || isSame(secondary, pendingContainerPos);
+	}
+
+	private static boolean isSame(BlockPos left, BlockPos right) {
+		return left != null && left.equals(right);
 	}
 
 	private static boolean trackLevel(Minecraft client) {
@@ -447,6 +492,11 @@ public final class ContainerSearcherClient {
 		if (!hasContainerSlots) {
 			return;
 		}
+		boolean newSession = menu.containerId != lastCapturedContainerId;
+		// the server has not sent the contents yet, we would think everything vanished
+		if (newSession && menu.getStateId() == 0) {
+			return;
+		}
 		HIGHLIGHTS.removeAt(openContainerPos);
 		if (openDuplicatePos != null) {
 			HIGHLIGHTS.removeAt(openDuplicatePos);
@@ -455,6 +505,9 @@ public final class ContainerSearcherClient {
 			return;
 		}
 
+		if (newSession) {
+			ContainerChanges.begin(client, DATABASE, openContainerPos, openDuplicatePos, contents, entries);
+		}
 		ContainerRecord record = new ContainerRecord();
 		record.server = serverKey(client);
 		record.dimension = dimensionKey(client);

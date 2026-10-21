@@ -5,10 +5,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import org.joml.Vector3f;
 
 import java.util.List;
 
 public final class Gfx {
+	// enableScissor is made to follow the current translation in enableScissor below
+	public static final boolean CLIPS = true;
+	private static final String TEXTURES = "noobs_container_searcher:textures/gui/";
 	private static final String LOGO = "noobs_container_searcher:textures/gui/logo_small.png";
 	private final GuiGraphics graphics;
 
@@ -37,7 +41,11 @@ public final class Gfx {
 	}
 
 	public void enableScissor(int x1, int y1, int x2, int y2) {
-		graphics.enableScissor(x1, y1, x2, y2);
+		// the scissor here ignores the pose translation, so add it by hand
+		Vector3f offset = graphics.pose().last().pose().getTranslation(new Vector3f());
+		int ox = Math.round(offset.x);
+		int oy = Math.round(offset.y);
+		graphics.enableScissor(x1 + ox, y1 + oy, x2 + ox, y2 + oy);
 	}
 
 	public void disableScissor() {
@@ -58,5 +66,10 @@ public final class Gfx {
 
 	public void logo(int x, int y, int size) {
 		graphics.blit(ResourceLocation.parse(LOGO), x, y, size, size, 0f, 0f, 48, 48, 48, 48);
+	}
+
+	// 64x64 icon textures under textures/gui
+	public void icon(String name, int x, int y, int size) {
+		graphics.blit(ResourceLocation.parse(TEXTURES + name + ".png"), x, y, size, size, 0f, 0f, 64, 64, 64, 64);
 	}
 }

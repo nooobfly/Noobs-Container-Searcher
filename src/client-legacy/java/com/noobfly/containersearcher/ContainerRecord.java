@@ -18,4 +18,8 @@ public final class ContainerRecord {
 	public long updatedAt;
 	public Map<String, Integer> items = new LinkedHashMap<>();
 	public java.util.List<ContainerItemRecord> entries = new java.util.ArrayList<>();
+	// openings we saw from a distance since the last time the player looked inside
+	public java.util.List<ContainerEvent> events = new java.util.ArrayList<>();
+	// the other half of this double chest was broken, so the saved items still include that half
+	public boolean halfLost;
 }

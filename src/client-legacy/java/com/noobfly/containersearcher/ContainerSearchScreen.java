@@ -980,18 +980,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 			Component.translatable("screen.noobs_container_searcher.locations_count", locations.size()).getString());
 		int cw = Math.min(560, bw);
 
-		card(g, bx, by + 4, cw, 44, SURFACE, BORDER);
-		g.text(font, Component.translatable("screen.noobs_container_searcher.locations_color_title").withStyle(ChatFormatting.BOLD), bx + 14, by + 14, TEXT_PRIMARY);
-		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.locations_color_hint").getString(), cw - 28 - 44), bx + 14, by + 27, TEXT_MUTED);
-		boolean on = ModSettings.get().locationColors;
-		int tx = bx + cw - 14 - 30;
-		int ty = by + 4 + 14;
-		boolean toggleHover = hovered(tx, ty, 30, 16);
-		rfill(g, tx, ty, 30, 16, on ? (toggleHover ? ACCENT_HOVER : ACCENT) : (toggleHover ? BORDER_HI : BORDER), 1);
-		rfill(g, on ? tx + 16 : tx + 2, ty + 2, 12, 12, TEXT_PRIMARY, 1);
-		hit(tx, ty, 30, 16, () -> ModSettings.get().setLocationColors(!ModSettings.get().locationColors));
-
-		int ay = by + 4 + 44 + 10;
+		int ay = by + 4;
 		String add = Component.translatable("screen.noobs_container_searcher.locations_add").getString();
 		int addW = font.width(add) + 28;
 		boolean iconHover = hovered(bx, ay, 22, 22);
@@ -1434,19 +1423,27 @@ public final class ContainerSearchScreen extends CompatScreen {
 		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_distance_hint").getString(), cw - 28), bx + 14, by + 26, TEXT_MUTED);
 		renderDistanceRow(g, bx + 14, by + 46, cw - 28);
 
-		int yd = by + 4 + 72 + 10;
-		card(g, bx, yd, cw, 44, SURFACE, BORDER);
-		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_item_display_title").withStyle(ChatFormatting.BOLD), bx + 14, yd + 10, TEXT_PRIMARY);
-		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_item_display_hint").getString(), cw - 28 - 44), bx + 14, yd + 23, TEXT_MUTED);
-		boolean displayOn = ModSettings.itemDisplayEnabled();
-		int tx = bx + cw - 14 - 30;
-		int ty = yd + 14;
-		boolean toggleHover = hovered(tx, ty, 30, 16);
-		rfill(g, tx, ty, 30, 16, displayOn ? (toggleHover ? ACCENT_HOVER : ACCENT) : (toggleHover ? BORDER_HI : BORDER), 1);
-		rfill(g, displayOn ? tx + 16 : tx + 2, ty + 2, 12, 12, TEXT_PRIMARY, 1);
-		hit(tx, ty, 30, 16, () -> ModSettings.get().setItemDisplay(!ModSettings.itemDisplayEnabled()));
+		int yd = by + 4 + 72 + 8;
+		toggleCard(g, bx, yd, cw, "screen.noobs_container_searcher.settings_item_display_title",
+			"screen.noobs_container_searcher.settings_item_display_hint", ModSettings.itemDisplayEnabled(),
+			() -> ModSettings.get().setItemDisplay(!ModSettings.itemDisplayEnabled()));
 
-		int y2 = yd + 44 + 10;
+		int yc = yd + 38 + 8;
+		toggleCard(g, bx, yc, cw, "screen.noobs_container_searcher.locations_color_title",
+			"screen.noobs_container_searcher.locations_color_hint", ModSettings.get().locationColors,
+			() -> ModSettings.get().setLocationColors(!ModSettings.get().locationColors));
+
+		int yt = yc + 38 + 8;
+		toggleCard(g, bx, yt, cw, "screen.noobs_container_searcher.settings_changes_title",
+			"screen.noobs_container_searcher.settings_changes_hint", ModSettings.trackChangesEnabled(),
+			() -> ModSettings.get().setTrackChanges(!ModSettings.trackChangesEnabled()));
+
+		int ya = yt + 38 + 8;
+		toggleCard(g, bx, ya, cw, "screen.noobs_container_searcher.settings_arrows_title",
+			"screen.noobs_container_searcher.settings_arrows_hint", ModSettings.targetArrowsEnabled(),
+			() -> ModSettings.get().setTargetArrows(!ModSettings.targetArrowsEnabled()));
+
+		int y2 = ya + 38 + 8;
 		card(g, bx, y2, cw, 70, SURFACE, BORDER);
 		g.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD), bx + 14, y2 + 12, TEXT_PRIMARY);
 		int items = 0;
@@ -1473,6 +1470,18 @@ public final class ContainerSearchScreen extends CompatScreen {
 			rfill(g, statsOn ? sx + 14 : sx + 2, sy + 2, 8, 6, TEXT_PRIMARY, 1);
 			hit(sx, sy, 24, 10, () -> Analytics.setEnabled(!Analytics.isEnabled()));
 		}
+	}
+
+	private void toggleCard(Gfx g, int bx, int y, int cw, String titleKey, String hintKey, boolean on, Runnable action) {
+		card(g, bx, y, cw, 38, SURFACE, BORDER);
+		g.text(font, Component.translatable(titleKey).withStyle(ChatFormatting.BOLD), bx + 14, y + 8, TEXT_PRIMARY);
+		g.text(font, trim(Component.translatable(hintKey).getString(), cw - 28 - 44), bx + 14, y + 21, TEXT_MUTED);
+		int tx = bx + cw - 14 - 30;
+		int ty = y + 11;
+		boolean hover = hovered(tx, ty, 30, 16);
+		rfill(g, tx, ty, 30, 16, on ? (hover ? ACCENT_HOVER : ACCENT) : (hover ? BORDER_HI : BORDER), 1);
+		rfill(g, on ? tx + 16 : tx + 2, ty + 2, 12, 12, TEXT_PRIMARY, 1);
+		hit(tx, ty, 30, 16, action);
 	}
 
 	private void caption(Gfx g, String key, int x, int y) {

@@ -98,6 +98,7 @@ public final class SearchController {
 	}
 
 	public static void renderMatchingSlot(Gfx graphics, Slot slot) {
+		ContainerChanges.renderPanel(graphics, slot);
 		if (activeSearchItem == null) {
 			return;
 		}

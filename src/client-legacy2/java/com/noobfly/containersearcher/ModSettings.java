@@ -34,6 +34,8 @@ public final class ModSettings {
 
 	public boolean itemDisplay = true;
 	public boolean locationColors = true;
+	public boolean trackChanges = true;
+	public boolean targetArrows = true;
 	public List<Location> locations = new ArrayList<>();
 	public List<String> rerollSelection = new ArrayList<>();
 	private transient int selectionRevision;
@@ -61,6 +63,24 @@ public final class ModSettings {
 
 	public void setItemDisplay(boolean enabled) {
 		itemDisplay = enabled;
+		save();
+	}
+
+	public static boolean trackChangesEnabled() {
+		return get().trackChanges;
+	}
+
+	public static boolean targetArrowsEnabled() {
+		return get().targetArrows;
+	}
+
+	public void setTargetArrows(boolean enabled) {
+		targetArrows = enabled;
+		save();
+	}
+
+	public void setTrackChanges(boolean enabled) {
+		trackChanges = enabled;
 		save();
 	}
 

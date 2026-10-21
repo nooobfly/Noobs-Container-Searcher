@@ -111,6 +111,10 @@ public final class ContainerDatabase {
 		put(record);
 	}
 
+	public ContainerRecord find(String server, String dimension, BlockPos pos) {
+		return records.get(key(server, dimension, pos.getX(), pos.getY(), pos.getZ()));
+	}
+
 	public List<ContainerRecord> allForServer(String server) {
 		List<ContainerRecord> matches = new ArrayList<>();
 		for (ContainerRecord record : records.values()) {

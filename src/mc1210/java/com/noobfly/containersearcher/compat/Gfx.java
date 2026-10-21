@@ -10,6 +10,9 @@ import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 public final class Gfx {
+	// whether enableScissor follows the current translation (it does not on 1.21.1)
+	public static final boolean CLIPS = true;
+	private static final String TEXTURES = "noobs_container_searcher:textures/gui/";
 	private static final String LOGO = "noobs_container_searcher:textures/gui/logo_small.png";
 	private final GuiGraphics graphics;
 
@@ -59,5 +62,10 @@ public final class Gfx {
 
 	public void logo(int x, int y, int size) {
 		graphics.blit(RenderPipelines.GUI_TEXTURED, ResourceLocation.parse(LOGO), x, y, 0f, 0f, size, size, 48, 48, 48, 48);
+	}
+
+	// 64x64 icon textures under textures/gui
+	public void icon(String name, int x, int y, int size) {
+		graphics.blit(RenderPipelines.GUI_TEXTURED, ResourceLocation.parse(TEXTURES + name + ".png"), x, y, 0f, 0f, size, size, 64, 64, 64, 64);
 	}
 }

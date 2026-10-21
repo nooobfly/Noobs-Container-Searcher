@@ -19,8 +19,18 @@ public final class HighlightManager {
 	public static final int HIGHLIGHT_COLOR = 0xFFFFFF55;
 	public static final float LINE_WIDTH = 2.0F;
 
+	private static HighlightManager instance;
+
 	private final List<Marker> markers = new ArrayList<>();
 	private final Map<String, Long> glowingVillagers = new LinkedHashMap<>();
+
+	public HighlightManager() {
+		instance = this;
+	}
+
+	public static HighlightManager instance() {
+		return instance;
+	}
 
 	public void show(Minecraft client, List<ContainerRecord> records, String currentDimension) {
 		clear(client);

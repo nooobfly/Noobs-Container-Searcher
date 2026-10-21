@@ -5,6 +5,8 @@
 	"client": [
 		"AbstractContainerScreenMixin",
 		"EntityRendererMixin",
+		"GuiMixin",
+		"MouseScrollMixin",
 		"KeyboardHandlerMixin"
 	],
 	"injectors": {
