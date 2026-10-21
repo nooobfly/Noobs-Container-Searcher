@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.16
+
+### Added
+
+- Added a "changes since your last visit" panel next to the container GUI. It shows which items were added or removed since you last opened the container, other players seen opening it nearby, and hints when a hopper, dropper or dispenser may have moved items, naming the container they went to or came from. If half of a double chest was broken it tells you, and who broke it when they were nearby. The panel scrolls with the mouse wheel and can be turned off in the Settings tab.
+
+- Added direction arrows. After a search, arrows at the screen edge point to the containers you cannot see yet, with their distance. They can be turned off in the Settings tab.
+
+### Changed
+
+- Moved the "Color results by location" toggle to the Settings tab.
+
 ## 1.15
 
 ### Added
