@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15
+
+### Added
+
+- Added anonymous usage stats. Every 12 hours the mod sends its version, the Minecraft version, the loader (Fabric or NeoForge) and a random install id, so I know which versions are worth supporting. No IP address or any personal data is stored. You can turn it off with the toggle at the bottom of the Settings tab.
+
 ## 1.14
 
 ### Added
