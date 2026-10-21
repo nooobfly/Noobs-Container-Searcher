@@ -131,6 +131,27 @@ public final class ContainerDatabase {
 		}
 	}
 
+	// moves everything saved under an old server key to a new one (once, when the key format changes)
+	public void rekey(String from, String to) {
+		List<ContainerRecord> moved = new ArrayList<>();
+		for (ContainerRecord record : records.values()) {
+			if (from.equals(record.server)) {
+				moved.add(record);
+			}
+		}
+		if (moved.isEmpty()) {
+			return;
+		}
+		for (ContainerRecord record : moved) {
+			records.remove(key(record));
+		}
+		for (ContainerRecord record : moved) {
+			record.server = to;
+			records.put(key(record), record);
+		}
+		save();
+	}
+
 	public void clearServer(String server) {
 		if (records.values().removeIf(record -> server.equals(record.server))) {
 			save();

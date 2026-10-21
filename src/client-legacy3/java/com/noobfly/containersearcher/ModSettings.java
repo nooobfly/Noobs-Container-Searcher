@@ -20,7 +20,21 @@ public final class ModSettings {
 
 	private static volatile ModSettings instance;
 
+	public static final class Location {
+		public String server;
+		public String dimension;
+		public String name;
+		public int x;
+		public int y;
+		public int z;
+		public int radius = 100;
+		public int color;
+		public String item = "minecraft:compass";
+	}
+
 	public boolean itemDisplay = true;
+	public boolean locationColors = true;
+	public List<Location> locations = new ArrayList<>();
 	public List<String> rerollSelection = new ArrayList<>();
 	private transient int selectionRevision;
 
@@ -47,6 +61,37 @@ public final class ModSettings {
 
 	public void setItemDisplay(boolean enabled) {
 		itemDisplay = enabled;
+		save();
+	}
+
+	public void setLocationColors(boolean enabled) {
+		locationColors = enabled;
+		save();
+	}
+
+	public synchronized List<Location> locationsFor(String server) {
+		List<Location> matches = new ArrayList<>();
+		for (Location loc : locations) {
+			if (server.equals(loc.server)) {
+				matches.add(loc);
+			}
+		}
+		return matches;
+	}
+
+	public synchronized void addLocation(Location loc) {
+		locations.add(loc);
+		save();
+	}
+
+	public synchronized void removeLocation(Location loc) {
+		if (locations.remove(loc)) {
+			save();
+		}
+	}
+
+	// call after editing a loc's fields in place
+	public synchronized void locationChanged() {
 		save();
 	}
 
@@ -78,6 +123,9 @@ public final class ModSettings {
 				if (loaded != null) {
 					if (loaded.rerollSelection == null) {
 						loaded.rerollSelection = new ArrayList<>();
+					}
+					if (loaded.locations == null) {
+						loaded.locations = new ArrayList<>();
 					}
 					return loaded;
 				}

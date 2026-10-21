@@ -1,6 +1,8 @@
 package com.noobfly.containersearcher.compat;
 
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -8,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 public final class Gfx {
+	private static final String LOGO = "noobs_container_searcher:textures/gui/logo_small.png";
 	private final GuiGraphics graphics;
 
 	public Gfx(GuiGraphics graphics) {
@@ -52,5 +55,9 @@ public final class Gfx {
 
 	public void tooltip(Font font, List<Component> lines, int mouseX, int mouseY) {
 		graphics.setComponentTooltipForNextFrame(font, lines, mouseX, mouseY);
+	}
+
+	public void logo(int x, int y, int size) {
+		graphics.blit(RenderPipelines.GUI_TEXTURED, Identifier.parse(LOGO), x, y, 0f, 0f, size, size, 48, 48, 48, 48);
 	}
 }

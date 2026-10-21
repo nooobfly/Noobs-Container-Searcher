@@ -46,7 +46,7 @@ public final class Highlights {
 			Vec3 cameraPos = camera.getPosition();
 			PoseStack poseStack = context.matrixStack();
 			MultiBufferSource.BufferSource bufferSource = (MultiBufferSource.BufferSource) context.consumers();
-			VertexConsumer consumer = bufferSource.getBuffer(RenderType.lines());
+			VertexConsumer consumer = bufferSource.getBuffer(SeeThroughLines.LINES);
 
 			int color = HighlightManager.HIGHLIGHT_COLOR;
 			float alpha = ((color >> 24) & 0xFF) / 255.0F;
@@ -63,7 +63,7 @@ public final class Highlights {
 					red, green, blue, alpha
 				);
 			}
-			bufferSource.endBatch(RenderType.lines());
+			bufferSource.endBatch(SeeThroughLines.LINES);
 		});
 
 		WorldRenderEvents.AFTER_ENTITIES.register(context -> {

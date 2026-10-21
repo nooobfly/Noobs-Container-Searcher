@@ -637,12 +637,73 @@ public final class ContainerSearcherClient {
 		return client.level.dimension().location().toString();
 	}
 
+	// save folder is unique per world, the level name is not (two "New World"s collide)
+	private static String worldFolder(Minecraft client) {
+		try {
+			java.nio.file.Path root = client.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
+			return root.toAbsolutePath().normalize().getFileName().toString();
+		} catch (RuntimeException exception) {
+			return client.getSingleplayerServer().getWorldData().getLevelName();
+		}
+	}
+
+	private static java.lang.reflect.Field zoomSeedField;
+	private static boolean zoomSeedLooked;
+	private static Object lastKeyLevel;
+	private static String lastKeyBase;
+	private static String lastKey;
+	private static final Set<String> MIGRATED = new HashSet<>();
+
+	// same address can host several worlds (proxies, multiverse), the hashed seed the server sends tells them apart
+	private static String withWorldId(Minecraft client, String base) {
+		if (client.level == lastKeyLevel && base.equals(lastKeyBase)) {
+			return lastKey;
+		}
+		String key = base;
+		try {
+			if (!zoomSeedLooked) {
+				zoomSeedLooked = true;
+				for (java.lang.reflect.Field field : client.level.getBiomeManager().getClass().getDeclaredFields()) {
+					if (field.getType() == long.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+						field.setAccessible(true);
+						zoomSeedField = field;
+						break;
+					}
+				}
+			}
+			if (zoomSeedField != null) {
+				key = base + "#" + Long.toHexString(zoomSeedField.getLong(client.level.getBiomeManager()));
+			}
+		} catch (ReflectiveOperationException | RuntimeException exception) {
+			key = base;
+		}
+		if (!key.equals(base) && MIGRATED.add(key)) {
+			// data saved before worlds were told apart goes to the first world that connects
+			DATABASE.rekey(base, key);
+			boolean moved = false;
+			for (ModSettings.Location loc : ModSettings.get().locations) {
+				if (base.equals(loc.server)) {
+					loc.server = key;
+					moved = true;
+				}
+			}
+			if (moved) {
+				ModSettings.get().locationChanged();
+			}
+		}
+		lastKeyLevel = client.level;
+		lastKeyBase = base;
+		lastKey = key;
+		return key;
+	}
+
 	static String serverKey(Minecraft client) {
 		if (client.getCurrentServer() != null) {
-			return "multiplayer:" + client.getCurrentServer().ip.toLowerCase(Locale.ROOT);
+			String base = "multiplayer:" + client.getCurrentServer().ip.toLowerCase(Locale.ROOT);
+			return client.level == null ? base : withWorldId(client, base);
 		}
 		if (client.getSingleplayerServer() != null) {
-			return "singleplayer:" + client.getSingleplayerServer().getWorldData().getLevelName();
+			return "singleplayer:" + worldFolder(client);
 		}
 		return "singleplayer:unknown";
 	}

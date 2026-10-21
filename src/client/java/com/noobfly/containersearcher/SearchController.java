@@ -51,6 +51,9 @@ public final class SearchController {
 
 	private static Identifier activeSearchItem;
 	private static String activeFilter;
+	// signature of the exact stack picked in the gui, so other enchanted books etc. don't glow too
+	private static String activeVariant;
+	private static final java.util.Map<ItemStack, Boolean> VARIANT_CACHE = new java.util.WeakHashMap<>();
 
 	private final ContainerDatabase database;
 	private final HighlightManager highlights;
@@ -90,6 +93,8 @@ public final class SearchController {
 	public static void clearActiveItem() {
 		activeSearchItem = null;
 		activeFilter = null;
+		activeVariant = null;
+		VARIANT_CACHE.clear();
 	}
 
 	public static void renderMatchingSlot(Gfx graphics, Slot slot) {
@@ -101,7 +106,8 @@ public final class SearchController {
 		if (slot.container instanceof Inventory
 			|| stack.isEmpty()
 			|| !BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(activeSearchItem)
-			|| !matchesActiveFilter(stack)) {
+			|| !matchesActiveFilter(stack)
+			|| !matchesActiveVariant(stack)) {
 			return;
 		}
 
@@ -181,6 +187,8 @@ public final class SearchController {
 		}
 		activeSearchItem = identifier;
 		activeFilter = null;
+		activeVariant = null;
+		VARIANT_CACHE.clear();
 
 		List<ContainerRecord> matches = database.search(
 			ContainerSearcherClient.serverKey(client),
@@ -245,13 +253,15 @@ public final class SearchController {
 		highlights.clear(client);
 	}
 
-	void focusItem(String itemId, List<ContainerRecord> records, String filter) {
+	void focusItem(String itemId, List<ContainerRecord> records, String filter, ContainerItemRecord variant) {
 		Minecraft client = Minecraft.getInstance();
 		Identifier identifier = Identifier.tryParse(itemId);
 		if (identifier != null) {
 			activeSearchItem = identifier;
 		}
 		activeFilter = filter;
+		activeVariant = variant == null ? null : variantSignature(variant.itemId, variant.name, variant.enchantmentNames);
+		VARIANT_CACHE.clear();
 		highlights.show(client, records, ContainerSearcherClient.dimensionKey(client));
 		if (client.player == null) {
 			return;
@@ -287,6 +297,34 @@ public final class SearchController {
 				|| activeFilter.startsWith("ench:")
 				&& hasEnchantment(stack.get(DataComponents.STORED_ENCHANTMENTS), activeFilter.substring("ench:".length()));
 		};
+	}
+
+	private static String variantSignature(String itemId, String name, List<String> enchantNames) {
+		List<String> sorted = new java.util.ArrayList<>(enchantNames);
+		java.util.Collections.sort(sorted);
+		return itemId + "|" + name + "|" + sorted;
+	}
+
+	private static boolean matchesActiveVariant(ItemStack stack) {
+		if (activeVariant == null) {
+			return true;
+		}
+		return VARIANT_CACHE.computeIfAbsent(stack, s -> {
+			List<String> names = new java.util.ArrayList<>();
+			addEnchantmentNames(names, s.get(DataComponents.ENCHANTMENTS));
+			addEnchantmentNames(names, s.get(DataComponents.STORED_ENCHANTMENTS));
+			String id = BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
+			return activeVariant.equals(variantSignature(id, s.getHoverName().getString(), names));
+		});
+	}
+
+	private static void addEnchantmentNames(List<String> out, ItemEnchantments enchantments) {
+		if (enchantments == null || enchantments.isEmpty()) {
+			return;
+		}
+		for (it.unimi.dsi.fastutil.objects.Object2IntMap.Entry<Holder<Enchantment>> entry : enchantments.entrySet()) {
+			out.add(Enchantment.getFullname(entry.getKey(), entry.getIntValue()).getString());
+		}
 	}
 
 	private static boolean hasEnchantment(ItemEnchantments enchantments, String enchantmentId) {
