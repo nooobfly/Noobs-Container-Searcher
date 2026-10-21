@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.14
+
+### Added
+
+- Added a Locations tab. Name an area (a base, a farm, a mine...) with a radius, a color and any item in the game as its icon. Search results get that location's color, icon and name, and you can filter by location in Quick filters. The radius is typed in blocks and the editor shows how many containers are inside. Thanks to SpeedYi9 for suggesting this feature!
+
+- Added a "Color results by location" toggle in the Locations tab.
+
+### Changed
+
+- New black theme for the search GUI, smoother list scrolling and a flat Librarian Reroll design.
+
+- The search GUI now picks its own GUI scale so it stays readable at any window size.
+
+- The header now shows the mod icon.
+
+### Fixed
+
+- Fixed saved containers being shared between different singleplayer worlds with the same name. Worlds are now told apart by their save folder (data saved before this is no longer shown). On multiplayer, different worlds behind the same server address are now separated too.
+
+- Fixed container highlight outlines not showing through walls on 1.21.1 - 1.21.10.
+
+- Fixed all enchanted books glowing inside a container when one specific book was selected. Now only that book glows.
+
 ## 1.13
 
 ### Added
