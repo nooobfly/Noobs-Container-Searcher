@@ -85,7 +85,7 @@ processResources {
 	]
 	inputs.properties props
 	exclude "fabric.mod.json"
-	filesMatching("META-INF/neoforge.mods.toml") {
+	filesMatching(["META-INF/neoforge.mods.toml", "**/analytics.properties"]) {
 		expand(props)
 	}
 }

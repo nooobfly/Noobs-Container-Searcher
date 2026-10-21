@@ -42,6 +42,7 @@ public final class Platform {
 	}
 
 	public static void registerEvents(ContainerSearcherClient client) {
+		com.noobfly.containersearcher.Analytics.start();
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> client.onUseBlock(world, hitResult));
 		UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) ->
 			client.onUseEntity(player, world, entity));

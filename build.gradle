@@ -118,6 +118,10 @@ processResources {
 	inputs.property "version", project.version
 	inputs.property "minecraft_dependency", mcProps.minecraft_dependency
 	inputs.property "java_version", mcProps.java_version
+	inputs.property "minecraft_version", mcProps.minecraft_version
+	filesMatching("**/analytics.properties") {
+		expand("version": project.version, "minecraft_version": mcProps.minecraft_version)
+	}
 	filesMatching("fabric.mod.json") {
 		expand(
 			"version": project.version,

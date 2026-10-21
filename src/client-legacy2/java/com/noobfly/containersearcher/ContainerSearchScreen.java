@@ -1458,6 +1458,19 @@ public final class ContainerSearchScreen extends CompatScreen {
 		drawButton(g, bx + 14, y2 + 40, dw, 20, delete, DANGER, DANGER_HOVER, DANGER_DARK, true, null);
 		hit(bx + 14, y2 + 40, dw, 20, this::confirmClearData);
 		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_irreversible"), bx + 14 + dw + 10, y2 + 46, TEXT_MUTED);
+
+		int y3 = y2 + 70 + 8;
+		if (y3 + 26 <= by + bh) {
+			boolean statsOn = Analytics.isEnabled();
+			card(g, bx, y3, cw, 26, SURFACE, BORDER);
+			g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_stats_hint").getString(), cw - 28 - 40), bx + 14, y3 + 9, TEXT_MUTED);
+			int sx = bx + cw - 14 - 24;
+			int sy = y3 + 8;
+			boolean statsHover = hovered(sx, sy, 24, 10);
+			rfill(g, sx, sy, 24, 10, statsOn ? (statsHover ? ACCENT_HOVER : ACCENT) : (statsHover ? BORDER_HI : BORDER), 1);
+			rfill(g, statsOn ? sx + 14 : sx + 2, sy + 2, 8, 6, TEXT_PRIMARY, 1);
+			hit(sx, sy, 24, 10, () -> Analytics.setEnabled(!Analytics.isEnabled()));
+		}
 	}
 
 	private void caption(Gfx g, String key, int x, int y) {

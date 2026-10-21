@@ -18,6 +18,10 @@ If a container is gone, its record is deleted, but only when you're standing nea
 
 Results are printed in chat with counts and clickable coordinates, and matching containers are highlighted.
 
+## Anonymous usage stats
+
+Once every 12 hours the mod sends the mod version, the Minecraft version, the loader (Fabric or NeoForge) and a random install id to noobfly.net. Nothing else: no server addresses, player names, worlds or container contents, and IP addresses are not stored. It helps decide which versions are worth supporting. You can turn it off in the Settings tab or with `"enabled": false` in `config/noobs-container-searcher/analytics.json`.
+
 ## Building
 
 ```

@@ -92,6 +92,10 @@ def relocateNeoForge = tasks.register("relocateNeoForge") {
 						def dest = new File(out, target + entry.name.substring(base.length()))
 						dest.parentFile.mkdirs()
 						dest.bytes = writer.toByteArray()
+					} else if (entry.name == base + "analytics.properties") {
+						def dest = new File(out, target + "analytics.properties")
+						dest.parentFile.mkdirs()
+						dest.bytes = zip.getInputStream(entry).bytes
 					} else if (entry.name == "noobs_container_searcher.client.mixins.json") {
 						def json = new groovy.json.JsonSlurper().parse(zip.getInputStream(entry))
 						json.package = json.package.replace("com.noobfly.containersearcher.", "com.noobfly.containersearcher.nf." + tag + ".")

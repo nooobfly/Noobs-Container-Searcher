@@ -58,6 +58,7 @@ public final class Platform {
 	}
 
 	public static void registerEvents(ContainerSearcherClient client) {
+		com.noobfly.containersearcher.Analytics.start();
 		NeoForge.EVENT_BUS.addListener((PlayerInteractEvent.RightClickBlock event) -> {
 			if (!event.getLevel().isClientSide()) {
 				return;
