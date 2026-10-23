@@ -1,0 +1,9 @@
+{
+  "pack": {
+    "description": "Noob's Container Searcher: disables the librarian reroll menu on this server",
+    "pack_format": 48,
+    "supported_formats": { "min_inclusive": 48, "max_inclusive": 121 },
+    "min_format": 48,
+    "max_format": 121
+  }
+}

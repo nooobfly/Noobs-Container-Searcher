@@ -94,6 +94,9 @@ public final class ContainerSearcherClient {
 
 	// right-click on a block
 	public InteractionResult onUseBlock(Level world, BlockHitResult hitResult) {
+		if (ServerRules.modDisabled()) {
+			return InteractionResult.PASS;
+		}
 		if (LIBRARIAN_REROLL.handleBlockUse(hitResult)) {
 			return InteractionResult.SUCCESS;
 		}
@@ -106,6 +109,9 @@ public final class ContainerSearcherClient {
 
 	// right-click on an entity (item frames, villagers...)
 	public InteractionResult onUseEntity(Entity player, Level world, Entity entity) {
+		if (ServerRules.modDisabled()) {
+			return InteractionResult.PASS;
+		}
 		if (LIBRARIAN_REROLL.handleEntityUse(entity)) {
 			return InteractionResult.SUCCESS;
 		}
@@ -120,6 +126,14 @@ public final class ContainerSearcherClient {
 
 	// runs every client tick
 	public void onClientTick(Minecraft client) {
+		if (ServerRules.modDisabled()) {
+			if (LIBRARIAN_REROLL.state() != LibrarianRerollController.State.IDLE) {
+				LIBRARIAN_REROLL.stopByUser();
+			}
+			HIGHLIGHTS.clear(client);
+			SEARCH.tick(client);
+			return;
+		}
 		HIGHLIGHTS.tick(client);
 		trackLookedContainer(client);
 		captureOpenScreen(client);

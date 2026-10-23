@@ -57,6 +57,10 @@ public final class LibrarianRerollController {
 	private Vec3 pickupDirection;
 
 	public void beginSelection(List<TargetBook> books) {
+		if (ServerRules.rerollDisabled()) {
+			message("message.noobs_container_searcher.reroll_disabled_on_server");
+			return;
+		}
 		stop(false, null);
 		desiredBooks = List.copyOf(books);
 		matchedBook = null;

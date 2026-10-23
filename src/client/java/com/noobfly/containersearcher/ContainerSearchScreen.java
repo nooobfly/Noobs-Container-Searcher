@@ -322,7 +322,13 @@ public final class ContainerSearchScreen extends CompatScreen {
 		int bw = pw - 24;
 		int bh = footerY - by - 6;
 		g.enableScissor(left + 1, top + HEADER_HEIGHT, left + pw - 1, top + ph - 1);
-		switch (tab) {
+		if (ServerRules.modDisabled()) {
+			searchBox.setVisible(false);
+			filterSearchBox.setVisible(false);
+			rerollSearchBox.setVisible(false);
+			locationNameBox.setVisible(false);
+			renderDisabledNotice(g, bx, by, bw, bh, footerY, true);
+		} else switch (tab) {
 			case SEARCH -> renderSearchTab(g, bx, by, bw, bh, footerY);
 			case REROLL -> renderRerollTab(g, bx, by, bw, bh, footerY);
 			case LOCATIONS -> renderLocationsTab(g, bx, by, bw, bh, footerY);
@@ -815,7 +821,37 @@ public final class ContainerSearchScreen extends CompatScreen {
 		}
 	}
 
+	private void renderDisabledNotice(Gfx g, int bx, int by, int bw, int bh, int footerY, boolean wholeMod) {
+		footer(g, footerY, "", "");
+		int cx = bx + bw / 2;
+		int size = 40;
+		int top = by + Math.max(8, (bh - size - 62) / 2);
+		int left = cx - size / 2;
+		for (int i = 0; i < size; i += 4) {
+			g.fill(left + i, top + i, left + i + 6, top + i + 6, DANGER);
+			g.fill(left + size - 4 - i, top + i, left + size + 2 - i, top + i + 6, DANGER);
+		}
+		String[] lines = {
+			Component.translatable("screen.noobs_container_searcher.disabled_title").getString(),
+			Component.translatable(wholeMod
+				? "screen.noobs_container_searcher.disabled_mod_text"
+				: "screen.noobs_container_searcher.disabled_reroll_text").getString(),
+			Component.translatable("screen.noobs_container_searcher.disabled_contact").getString()
+		};
+		int y = top + size + 16;
+		for (int i = 0; i < lines.length; i++) {
+			String line = trim(lines[i], bw - 24);
+			g.text(font, line, cx - font.width(line) / 2, y, i == 0 ? DANGER_HOVER : i == 1 ? TEXT_PRIMARY : TEXT_MUTED);
+			y += i == 0 ? 16 : 13;
+		}
+	}
+
 	private void renderRerollTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		if (ServerRules.rerollDisabled()) {
+			rerollSearchBox.setVisible(false);
+			renderDisabledNotice(g, bx, by, bw, bh, footerY, false);
+			return;
+		}
 		if (seenSelectionRevision != ModSettings.get().selectionRevision()) {
 			syncSelection();
 		}

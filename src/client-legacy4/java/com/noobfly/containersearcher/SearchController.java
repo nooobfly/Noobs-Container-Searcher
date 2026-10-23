@@ -180,6 +180,10 @@ public final class SearchController {
 			error.accept(Component.translatable("message.noobs_container_searcher.not_in_world"));
 			return 0;
 		}
+		if (ServerRules.modDisabled()) {
+			error.accept(Component.translatable("message.noobs_container_searcher.disabled_on_server"));
+			return 0;
+		}
 
 		String itemId = identifier.toString();
 		if (!BuiltInRegistries.ITEM.containsKey(identifier)) {

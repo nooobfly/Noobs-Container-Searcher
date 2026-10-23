@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17
+
+### Added
+
+- Added German, Russian and Brazilian Portuguese translations.
+
+- Added server datapack switches. Server owners can turn the whole mod, or just the librarian reroll, off with a datapack (the packs are in the `datapacks` folder of the GitHub repository). When it is off the menu still opens and shows a notice that the server administration disabled it, and commands and searches tell you in chat.
+
 ## 1.16
 
 ### Added
