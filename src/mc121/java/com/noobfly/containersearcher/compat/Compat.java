@@ -44,4 +44,9 @@ public final class Compat {
 	public static boolean isLeftButton(int b) {
 		return b == 0;
 	}
+
+	// 26.4 snapshots dropped the client biome manager (and the hashed seed with it)
+	public static Object biomeManager(net.minecraft.client.multiplayer.ClientLevel level) {
+		return level.getBiomeManager();
+	}
 }

@@ -1,0 +1,71 @@
+package com.noobfly.containersearcher.compat;
+
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.List;
+
+public final class Gfx {
+	// whether enableScissor follows the current translation (it does not on 1.21.1)
+	public static final boolean CLIPS = true;
+	private static final String TEXTURES = "noobs_container_searcher:textures/gui/";
+	private static final String LOGO = "noobs_container_searcher:textures/gui/logo_small.png";
+	private final GuiGraphicsExtractor graphics;
+
+	public Gfx(GuiGraphicsExtractor graphics) {
+		this.graphics = graphics;
+	}
+
+	public void fill(int x1, int y1, int x2, int y2, int color) {
+		graphics.fill(x1, y1, x2, y2, color);
+	}
+
+	public void outline(int x, int y, int width, int height, int color) {
+		graphics.outline(x, y, width, height, color);
+	}
+
+	public void text(Font font, Component text, int x, int y, int color) {
+		graphics.text(font, text, x, y, color);
+	}
+
+	public void text(Font font, String text, int x, int y, int color) {
+		graphics.text(font, text, x, y, color);
+	}
+
+	public void centeredText(Font font, Component text, int x, int y, int color) {
+		graphics.centeredText(font, text, x, y, color);
+	}
+
+	public void enableScissor(int x1, int y1, int x2, int y2) {
+		graphics.enableScissor(x1, y1, x2, y2);
+	}
+
+	public void disableScissor() {
+		graphics.disableScissor();
+	}
+
+	public void fakeItem(ItemStack stack, int x, int y) {
+		graphics.fakeItem(stack, x, y);
+	}
+
+	public void itemDecorations(Font font, ItemStack stack, int x, int y, String label) {
+		graphics.itemDecorations(font, stack, x, y, label);
+	}
+
+	public void tooltip(Font font, List<Component> lines, int mouseX, int mouseY) {
+		graphics.setComponentTooltipForNextFrame(font, lines, mouseX, mouseY);
+	}
+
+	public void logo(int x, int y, int size) {
+		graphics.blit(RenderPipelines.GUI_TEXTURED, Identifier.parse(LOGO), x, y, 0f, 0f, size, size, 48, 48, 48, 48);
+	}
+
+	// 64x64 icon textures under textures/gui
+	public void icon(String name, int x, int y, int size) {
+		graphics.blit(RenderPipelines.GUI_TEXTURED, Identifier.parse(TEXTURES + name + ".png"), x, y, 0f, 0f, size, size, 64, 64, 64, 64);
+	}
+}

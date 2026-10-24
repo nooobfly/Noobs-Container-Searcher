@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.18
+
+### Added
+
+- Added support for Minecraft 26.4 snapshots 1 to 5 (Fabric).
+
 ## 1.17
 
 ### Added

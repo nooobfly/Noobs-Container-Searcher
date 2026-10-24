@@ -22,16 +22,21 @@ public final class Bootstrap implements PreLaunchEntrypoint, ClientModInitialize
 	private static final String REAL_ENTRYPOINT = "com.noobfly.containersearcher.ContainerSearcherClient";
 	private static final String REAL_MIXIN_CONFIG = "noobs_container_searcher.client.mixins.json";
 
-	private static final Map<String, String> IMPL_BY_VERSION = Map.of(
-		"1.21.1", "/impl/mc1211.jar",
-		"1.21.4", "/impl/mc1214.jar",
-		"1.21.8", "/impl/mc1218.jar",
-		"1.21.10", "/impl/mc1210.jar",
-		"1.21.11", "/impl/mc121.jar",
-		"26.1", "/impl/mc261.jar",
-		"26.1.2", "/impl/mc2612.jar",
-		"26.2", "/impl/mc262.jar",
-		"26.3", "/impl/mc263.jar"
+	private static final Map<String, String> IMPL_BY_VERSION = Map.ofEntries(
+		Map.entry("1.21.1", "/impl/mc1211.jar"),
+		Map.entry("1.21.4", "/impl/mc1214.jar"),
+		Map.entry("1.21.8", "/impl/mc1218.jar"),
+		Map.entry("1.21.10", "/impl/mc1210.jar"),
+		Map.entry("1.21.11", "/impl/mc121.jar"),
+		Map.entry("26.1", "/impl/mc261.jar"),
+		Map.entry("26.1.2", "/impl/mc2612.jar"),
+		Map.entry("26.2", "/impl/mc262.jar"),
+		Map.entry("26.3", "/impl/mc263.jar"),
+		Map.entry("26.4-snapshot-1", "/impl/mc264a.jar"),
+		Map.entry("26.4-snapshot-2", "/impl/mc264a.jar"),
+		Map.entry("26.4-snapshot-3", "/impl/mc264a.jar"),
+		Map.entry("26.4-snapshot-4", "/impl/mc264a.jar"),
+		Map.entry("26.4-snapshot-5", "/impl/mc264b.jar")
 	);
 
 	private static ClassLoader targetClassLoader;

@@ -119,7 +119,7 @@ tasks.named("jar") {
 
 // Tek jar dokuz Minecraft sürümünü ve Fabric + NeoForge'u birden destekliyor; Modrinth/CurseForge'a
 // tek dosya, tüm sürümler birden etiketlenerek yüklenir.
-def supportedGameVersions = ["1.21.1", "1.21.4", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.1.2", "26.2", "26.3"]
+def supportedGameVersions = ["1.21.1", "1.21.4", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.1.2", "26.2", "26.3", "26.4-snapshot-1", "26.4-snapshot-2", "26.4-snapshot-3", "26.4-snapshot-4", "26.4-snapshot-5"]
 def releaseNotesFile = file("../release-notes.md")
 def releaseNotes = providers.provider {
 	releaseNotesFile.exists() ? releaseNotesFile.getText("UTF-8") : "No changelog provided."

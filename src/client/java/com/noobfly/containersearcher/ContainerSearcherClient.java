@@ -728,16 +728,19 @@ public final class ContainerSearcherClient {
 		try {
 			if (!zoomSeedLooked) {
 				zoomSeedLooked = true;
-				for (java.lang.reflect.Field field : client.level.getBiomeManager().getClass().getDeclaredFields()) {
-					if (field.getType() == long.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
-						field.setAccessible(true);
-						zoomSeedField = field;
-						break;
+				Object manager = Compat.biomeManager(client.level);
+				if (manager != null) {
+					for (java.lang.reflect.Field field : manager.getClass().getDeclaredFields()) {
+						if (field.getType() == long.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+							field.setAccessible(true);
+							zoomSeedField = field;
+							break;
+						}
 					}
 				}
 			}
 			if (zoomSeedField != null) {
-				key = base + "#" + Long.toHexString(zoomSeedField.getLong(client.level.getBiomeManager()));
+				key = base + "#" + Long.toHexString(zoomSeedField.getLong(Compat.biomeManager(client.level)));
 			}
 		} catch (ReflectiveOperationException | RuntimeException exception) {
 			key = base;
