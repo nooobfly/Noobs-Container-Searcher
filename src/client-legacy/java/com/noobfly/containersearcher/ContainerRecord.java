@@ -22,4 +22,6 @@ public final class ContainerRecord {
 	public java.util.List<ContainerEvent> events = new java.util.ArrayList<>();
 	// the other half of this double chest was broken, so the saved items still include that half
 	public boolean halfLost;
+	// ender chest block was broken, the items are still the player's own
+	public boolean blockGone;
 }

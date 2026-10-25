@@ -5,6 +5,8 @@ import java.util.List;
 
 public final class ContainerItemRecord {
 	public String itemId;
+	// name of the shulker box this item was packed in, null when it sits loose
+	public String inside;
 	public String stackData;
 	public int count;
 	public String name;

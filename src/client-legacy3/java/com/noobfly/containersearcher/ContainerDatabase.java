@@ -156,6 +156,17 @@ public final class ContainerDatabase {
 		save();
 	}
 
+	// every saved server/world key with its containers, in saved order
+	public java.util.Map<String, List<ContainerRecord>> allServers() {
+		java.util.Map<String, List<ContainerRecord>> grouped = new LinkedHashMap<>();
+		for (ContainerRecord record : records.values()) {
+			if (record.server != null) {
+				grouped.computeIfAbsent(record.server, ignored -> new ArrayList<>()).add(record);
+			}
+		}
+		return grouped;
+	}
+
 	public void clearServer(String server) {
 		if (records.values().removeIf(record -> server.equals(record.server))) {
 			save();

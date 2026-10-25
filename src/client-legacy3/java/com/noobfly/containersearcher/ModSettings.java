@@ -36,8 +36,10 @@ public final class ModSettings {
 	public boolean locationColors = true;
 	public boolean trackChanges = true;
 	public boolean targetArrows = true;
+	public int highlightSeconds = 60;
 	public List<Location> locations = new ArrayList<>();
 	public List<String> rerollSelection = new ArrayList<>();
+	public List<String> excludedContainerTypes = new ArrayList<>();
 	private transient int selectionRevision;
 
 	private ModSettings() {
@@ -55,6 +57,19 @@ public final class ModSettings {
 			}
 		}
 		return current;
+	}
+
+	public static int highlightSeconds() {
+		return Math.max(1, Math.min(3600, get().highlightSeconds));
+	}
+
+	public static long highlightMillis() {
+		return highlightSeconds() * 1000L;
+	}
+
+	public void setHighlightSeconds(int seconds) {
+		highlightSeconds = Math.max(1, Math.min(3600, seconds));
+		save();
 	}
 
 	public static boolean itemDisplayEnabled() {
@@ -115,6 +130,18 @@ public final class ModSettings {
 		save();
 	}
 
+	public synchronized boolean isTypeExcluded(String key) {
+		return excludedContainerTypes.contains(key);
+	}
+
+	public synchronized void setTypeExcluded(String key, boolean excluded) {
+		boolean changed = excluded ? !excludedContainerTypes.contains(key) && excludedContainerTypes.add(key)
+			: excludedContainerTypes.remove(key);
+		if (changed) {
+			save();
+		}
+	}
+
 	public synchronized List<String> rerollSelection() {
 		return rerollSelection == null ? List.of() : List.copyOf(rerollSelection);
 	}
@@ -143,6 +170,9 @@ public final class ModSettings {
 				if (loaded != null) {
 					if (loaded.rerollSelection == null) {
 						loaded.rerollSelection = new ArrayList<>();
+					}
+					if (loaded.excludedContainerTypes == null) {
+						loaded.excludedContainerTypes = new ArrayList<>();
 					}
 					if (loaded.locations == null) {
 						loaded.locations = new ArrayList<>();

@@ -44,8 +44,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	private enum Sort { NAME, DISTANCE }
 
-	private static final int RESULT_HEIGHT = 28;
-	private static final int RESULT_STRIDE = 31;
+	private static final int RESULT_HEIGHT = 32;
+	private static final int RESULT_STRIDE = 35;
 	private static final int ENCHANT_ROW = 16;
 	private static final int REROLL_CARD_HEIGHT = 26;
 	private static final int REROLL_CARD_STRIDE = 29;
@@ -69,6 +69,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private static final int ACCENT_HOVER = 0xFF8A8A96;
 	private static final int ACCENT_DARK = 0xFF3A3A42;
 	private static final int ACCENT_BG = 0xFF26262B;
+	private static final String DISCORD_URL = "https://discord.gg/SSwGQZp4gQ";
+	private static final int DISCORD_HOVER = 0xFF5865F2;
 	private static final int DANGER = 0xFFED4245;
 	private static final int DANGER_HOVER = 0xFFF26669;
 	private static final int DANGER_DARK = 0xFFA82E31;
@@ -79,6 +81,9 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private static final int CONTAINER_CYAN = 0xFF55D6D6;
 
 	private static final int MAX_DISTANCE = 1000;
+	private static final int MAX_CUSTOM_DISTANCE = 100000;
+	private static final int DURATION_SLIDER_MAX = 300;
+	private static final int MAX_DURATION_SECONDS = 3600;
 	private static final int MAX_PANEL_WIDTH = 800;
 	// below this (in gui pixels) the layout gets cramped, so the screen picks its own gui scale
 	private static final int FIT_WIDTH = 680;
@@ -102,6 +107,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	private static final String[] ICON_SEARCH = {"..XXXX...", ".X....X..", "X......X.", "X......X.", "X......X.", ".X....X..", "..XXXXXX.", "......XXX", "........X"};
 	private static final String[] ICON_X = {"X...X", ".X.X.", "..X..", ".X.X.", "X...X"};
+	// even size so it sits exactly in the middle of an even button
+	private static final String[] ICON_CLOSE = {"X....X", ".X..X.", "..XX..", "..XX..", ".X..X.", "X....X"};
 	private static final String[] ICON_CHECK = {".....X", "....X.", "X..X..", ".XX...", "..X..."};
 	private static final String[] ICON_CHEVRON = {"XXXXX", ".XXX.", "..X.."};
 	private static final String[] ICON_ARROW = {"..X..", "...X.", "XXXXX", "...X.", "..X.."};
@@ -115,7 +122,11 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	private record ScrollArea(int x, int y, int w, int h, DoubleConsumer onScroll) { }
 
-	private record ChipSpec(String label, int count, int dot, boolean active, boolean closable, Runnable click) { }
+	private record ChipSpec(String label, int count, int dot, boolean active, boolean closable, Runnable click, boolean excluded) {
+		private ChipSpec(String label, int count, int dot, boolean active, boolean closable, Runnable click) {
+			this(label, count, dot, active, closable, click, false);
+		}
+	}
 
 	private final SearchController controller;
 	private final List<ContainerRecord> records;
@@ -161,8 +172,23 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private double resultScroll;
 	private double filterScroll;
 	private double containerTypeScroll;
+	private boolean excludeMode;
+	// settings sub-page that lists every saved server, and the server whose data we are looking at instead of the current one
+	private boolean serversView;
+	private String viewingKey;
+	private List<ContainerRecord> ownRecords;
+	private long dataBytes = -1;
+	private double serverScroll;
+	private final List<ServerSummary> serverSummaries = new ArrayList<>();
+	private final Map<String, Set<String>> typeMatchCache = new HashMap<>();
 	private double rerollScroll;
 	private boolean draggingDistanceSlider;
+	private boolean draggingDurationSlider;
+	private int durationSliderX;
+	private int durationSliderWidth;
+	private enum NumberEdit { NONE, DISTANCE, DURATION }
+	private NumberEdit numberEdit = NumberEdit.NONE;
+	private EditBox numberBox;
 	private int sliderX;
 	private int sliderWidth;
 	private int mx = -1;
@@ -221,6 +247,23 @@ public final class ContainerSearchScreen extends CompatScreen {
 			refreshIconResults();
 		});
 
+		numberBox = newBox(Component.translatable("screen.noobs_container_searcher.distance_filter"), "screen.noobs_container_searcher.number_hint");
+		numberBox.setMaxLength(6);
+		numberBox.setVisible(false);
+		numberBox.setResponder(value -> {
+			if (!value.matches("[0-9]{1,6}")) {
+				return;
+			}
+			int number = Integer.parseInt(value);
+			if (numberEdit == NumberEdit.DISTANCE) {
+				maxDistance = Math.max(1, Math.min(MAX_CUSTOM_DISTANCE, number));
+				resultScroll = 0;
+				rebuild();
+			} else if (numberEdit == NumberEdit.DURATION) {
+				ModSettings.get().setHighlightSeconds(Math.max(1, Math.min(MAX_DURATION_SECONDS, number)));
+			}
+		});
+
 		loadEnchantments();
 		switchTab(Tab.SEARCH);
 	}
@@ -275,11 +318,14 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	private void switchTab(Tab next) {
 		tab = next;
+		serversView = false;
 		searchBox.setVisible(tab == Tab.SEARCH);
 		filterSearchBox.setVisible(tab == Tab.SEARCH);
 		rerollSearchBox.setVisible(tab == Tab.REROLL);
 		locationNameBox.setVisible(tab == Tab.LOCATIONS);
 		closeEditor();
+		numberEdit = NumberEdit.NONE;
+		numberBox.setVisible(false);
 		focusBox(tab == Tab.SEARCH ? searchBox : tab == Tab.REROLL ? rerollSearchBox : null);
 	}
 
@@ -291,6 +337,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 		radiusBox.setFocused(target == radiusBox);
 		hexBox.setFocused(target == hexBox);
 		iconSearchBox.setFocused(target == iconSearchBox);
+		numberBox.setFocused(target == numberBox);
 		setFocused(target);
 	}
 
@@ -355,8 +402,18 @@ public final class ContainerSearchScreen extends CompatScreen {
 		int cy = top + 7;
 		boolean hover = hovered(cx, cy, 20, 20);
 		card(g, cx, cy, 20, 20, hover ? SURFACE_HI : SURFACE, hover ? BORDER_HI : BORDER);
-		icon(g, ICON_X, cx + 7, cy + 8, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
+		icon(g, ICON_CLOSE, cx + 7, cy + 7, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
 		hit(cx, cy, 20, 20, this::onClose);
+
+		// always visible, the Community card in Settings only shows when the page has room
+		int dx = cx - 26;
+		boolean discordHover = hovered(dx, cy, 20, 20);
+		card(g, dx, cy, 20, 20, discordHover ? SURFACE_HI : SURFACE, discordHover ? DISCORD_HOVER : BORDER);
+		g.icon("icon_discord", dx + 2, cy + 2, 16);
+		hit(dx, cy, 20, 20, this::openDiscord);
+		if (discordHover) {
+			g.tooltip(font, List.of(Component.translatable("screen.noobs_container_searcher.discord_tooltip")), mx, my);
+		}
 	}
 
 	private int tabButton(Gfx g, Tab target, Component label, int x, int top, boolean live) {
@@ -398,7 +455,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 		int ty = by + 28;
 		g.text(font, Component.translatable("screen.noobs_container_searcher.try"), rx, ty + 2, TEXT_MUTED);
 		int tagX = rx + font.width(Component.translatable("screen.noobs_container_searcher.try")) + 6;
-		for (String snippet : new String[] {"name:", "lore:", "durability:<50", "enchanted"}) {
+		for (String snippet : new String[] {"name:", "lore:", "durability:<50", "enchanted", "include:", "exclude:"}) {
 			if (tagX + font.width(snippet) + 8 > rx + rw) {
 				break;
 			}
@@ -416,6 +473,12 @@ public final class ContainerSearchScreen extends CompatScreen {
 		int sy = by + 94;
 		g.fill(rx, sy + 11, rx + rw, sy + 12, BORDER);
 		g.text(font, Component.translatable("screen.noobs_container_searcher.results", rows.size()), rx, sy + 2, TEXT_SECONDARY);
+		if (viewingKey != null) {
+			int bannerX = rx + font.width(Component.translatable("screen.noobs_container_searcher.results", rows.size())) + 12;
+			int sortReserve = font.width(Component.translatable("screen.noobs_container_searcher.sort_distance")) + 40;
+			String banner = Component.translatable("screen.noobs_container_searcher.servers_viewing", serverDisplayName(viewingKey)).getString() + "  x";
+			tag(g, bannerX, sy - 1, trim(banner, Math.max(40, rx + rw - sortReserve - bannerX - 8)), DANGER_HOVER, DANGER_BG, 12, this::endViewing);
+		}
 		String sortLabel = Component.translatable(sort == Sort.NAME
 			? "screen.noobs_container_searcher.sort_name" : "screen.noobs_container_searcher.sort_distance").getString();
 		int sortW = font.width(sortLabel) + 22;
@@ -452,9 +515,11 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 		List<ChipSpec> types = new ArrayList<>();
 		for (ContainerTypeEntry type : containerTypes) {
-			types.add(new ChipSpec(type.name, type.count, containerColor(type.name), selectedContainerTypeKeys.contains(type.key), false, () -> toggleContainerType(type)));
+			boolean excluded = ModSettings.get().isTypeExcluded(type.key);
+			types.add(new ChipSpec(type.name, type.count, containerColor(type.name), !excluded && selectedContainerTypeKeys.contains(type.key), false, () -> toggleContainerType(type), excluded));
 		}
-		int typesAreaH = Math.min(flowChips(g, types, x, 0, colW, false), 54);
+		// the empty notice needs its own row, otherwise it sits on the footer divider
+		int typesAreaH = types.isEmpty() ? 12 : Math.min(flowChips(g, types, x, 0, colW, false), 54);
 		int typesTitleY = by + bh - typesAreaH - 14;
 
 		caption(g, "screen.noobs_container_searcher.enchantments", x, y);
@@ -463,6 +528,13 @@ public final class ContainerSearchScreen extends CompatScreen {
 		renderEnchantmentList(g, x, y, colW, listH);
 
 		caption(g, "screen.noobs_container_searcher.container_types", x, typesTitleY);
+		String excludeLabel = Component.translatable("screen.noobs_container_searcher.mode_exclude").getString();
+		String includeLabel = Component.translatable("screen.noobs_container_searcher.mode_include").getString();
+		int excludeW = font.width(excludeLabel) + 8;
+		int includeW = font.width(includeLabel) + 8;
+		int modeX = x + colW - excludeW - includeW - 2;
+		tag(g, modeX, typesTitleY - 3, includeLabel, excludeMode ? TEXT_MUTED : TEXT_PRIMARY, excludeMode ? SURFACE : ACCENT_BG, 12, () -> excludeMode = false);
+		tag(g, modeX + includeW + 2, typesTitleY - 3, excludeLabel, excludeMode ? DANGER_HOVER : TEXT_MUTED, excludeMode ? DANGER_BG : SURFACE, 12, () -> excludeMode = true);
 		int chipsY = typesTitleY + 12;
 		if (types.isEmpty()) {
 			g.text(font, Component.translatable("screen.noobs_container_searcher.no_container_types"), x + 2, chipsY + 3, TEXT_MUTED);
@@ -576,7 +648,13 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private void toggleContainerType(ContainerTypeEntry type) {
-		if (!selectedContainerTypeKeys.remove(type.key)) {
+		ModSettings settings = ModSettings.get();
+		if (settings.isTypeExcluded(type.key)) {
+			settings.setTypeExcluded(type.key, false);
+		} else if (excludeMode) {
+			settings.setTypeExcluded(type.key, true);
+			selectedContainerTypeKeys.remove(type.key);
+		} else if (!selectedContainerTypeKeys.remove(type.key)) {
 			selectedContainerTypeKeys.add(type.key);
 			selectedTypeLabels.put(type.key, type.name);
 		}
@@ -634,7 +712,9 @@ public final class ContainerSearchScreen extends CompatScreen {
 		}
 
 		int rightX = x + w - 8;
-		if (hover) {
+		if (viewingKey != null) {
+			// another server's data: nothing here can be located in this world
+		} else if (hover) {
 			String locate = Component.translatable("screen.noobs_container_searcher.locate").getString();
 			int bw = font.width(locate) + 28;
 			drawButton(g, rightX - bw, y + 4, bw, 20, locate, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, ICON_ARROW);
@@ -673,28 +753,68 @@ public final class ContainerSearchScreen extends CompatScreen {
 		int nameMax = Math.max(40, rightX - x - 36 - countW);
 		String name = trim(row.name, nameMax);
 		g.text(font, name, x + 32, y + 4, itemNameColor(stack, row.item));
+		int afterName = x + 32 + font.width(name) + 5;
 		if (row.count > 1) {
-			g.text(font, "x" + row.count, x + 32 + font.width(name) + 5, y + 4, TEXT_SECONDARY);
+			g.text(font, "x" + row.count, afterName, y + 4, TEXT_SECONDARY);
+			afterName += countW;
+		}
+		if (row.item.inside != null && afterName + 20 < rightX) {
+			String inside = trim(Component.translatable("screen.noobs_container_searcher.inside_box", row.item.inside).getString(), rightX - afterName - 4);
+			g.text(font, inside, afterName, y + 4, containerColor("shulker"));
 		}
 
 		int cx = x + 32;
+		ItemStack containerIcon = containerIcon(row.record.containerType);
+		if (!containerIcon.isEmpty()) {
+			g.fakeItem(containerIcon, cx, y + 13);
+			cx += 19;
+		}
 		String container = containerName(row.record.containerType).getString();
 		int whereMax = Math.max(40, rightX - cx - 8);
 		String containerText = trim(container, whereMax);
-		g.text(font, containerText, cx, y + 15, containerColor(container));
+		g.text(font, containerText, cx, y + 17, containerColor(container));
 		cx += font.width(containerText);
+		if (row.record.blockGone) {
+			String gone = " " + Component.translatable("screen.noobs_container_searcher.ender_gone_tag").getString();
+			g.text(font, gone, cx, y + 17, DANGER_HOVER);
+			cx += font.width(gone);
+		}
 		String coords = trim("  " + row.record.x + " " + row.record.y + " " + row.record.z, Math.max(0, whereMax - font.width(containerText)));
-		g.text(font, coords, cx, y + 15, TEXT_SECONDARY);
+		g.text(font, coords, cx, y + 17, TEXT_SECONDARY);
 		cx += font.width(coords) + 8;
 		String dimension = shortDimension(row.record.dimension);
 		String more = dimension + durabilitySuffix(row.item);
 		if (cx + font.width(more) < rightX) {
-			g.text(font, more, cx, y + 15, TEXT_MUTED);
+			g.text(font, more, cx, y + 17, TEXT_MUTED);
 		}
 		hitClipped(x, y, w, RESULT_HEIGHT, x, viewY, w, viewH, () -> {
+			if (viewingKey != null) {
+				return;
+			}
+			if (row.record.blockGone) {
+				if (minecraft != null && minecraft.player != null) {
+					Compat.message(minecraft.player, Component.translatable("message.noobs_container_searcher.ender_gone").withStyle(ChatFormatting.YELLOW));
+				}
+				onClose();
+				return;
+			}
 			controller.focusItem(row.itemId, recordsFor(row), selectedFilter, row.item);
 			onClose();
 		});
+	}
+
+	// chest/shulker/etc. show their own block item, villagers show the spawn egg
+	private static ItemStack containerIcon(String storedType) {
+		if (storedType == null || storedType.isBlank()) {
+			return ItemStack.EMPTY;
+		}
+		String id = storedType.startsWith("villager:") ? "minecraft:villager_spawn_egg" : storedType;
+		ResourceLocation identifier = ResourceLocation.tryParse(id);
+		if (identifier == null) {
+			return ItemStack.EMPTY;
+		}
+		Item item = BuiltInRegistries.ITEM.getValue(identifier);
+		return item == null || item == Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
 	}
 
 	private static String durabilitySuffix(ContainerItemRecord item) {
@@ -702,7 +822,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private List<ModSettings.Location> currentLocations() {
-		if (minecraft == null || minecraft.level == null) {
+		if (viewingKey != null || minecraft == null || minecraft.level == null) {
 			return List.of();
 		}
 		return ModSettings.get().locationsFor(ContainerSearcherClient.serverKey(minecraft));
@@ -710,7 +830,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 	// closest loc whose radius covers the container, null if none (or coloring is off)
 	private ModSettings.Location locationFor(ContainerRecord record) {
-		if (!ModSettings.get().locationColors) {
+		if (viewingKey != null || !ModSettings.get().locationColors) {
 			return null;
 		}
 		ModSettings.Location best = null;
@@ -731,7 +851,32 @@ public final class ContainerSearchScreen extends CompatScreen {
 		return best;
 	}
 
+	private static boolean isEnderChest(ContainerRecord record) {
+		return "minecraft:ender_chest".equals(record.containerType);
+	}
+
+	// a standing ender chest in this dimension, nearest first; then any standing one; a broken one only as a last resort
+	private ContainerRecord enderRepresentative() {
+		ContainerRecord best = null;
+		double bestScore = Double.MAX_VALUE;
+		for (ContainerRecord record : records) {
+			if (!isEnderChest(record)) {
+				continue;
+			}
+			double distance = distanceTo(record);
+			double score = (record.blockGone ? 2e12 : 0) + (distance < 0 ? 1e12 : distance);
+			if (score < bestScore) {
+				bestScore = score;
+				best = record;
+			}
+		}
+		return best;
+	}
+
 	private double distanceTo(ContainerRecord record) {
+		if (viewingKey != null) {
+			return -2;
+		}
 		if (minecraft == null || minecraft.player == null || minecraft.level == null) {
 			return -2;
 		}
@@ -784,9 +929,8 @@ public final class ContainerSearchScreen extends CompatScreen {
 			updateDistanceSlider(mx);
 		});
 
-		int pillX = sliderX + sliderWidth + 8;
-		rfill(g, pillX, y + 2, pillW, 16, ACCENT_BG, 1);
-		g.centeredText(font, Component.literal(distanceValueText()), pillX + pillW / 2, y + 6, TEXT_PRIMARY);
+		numberPill(g, sliderX + sliderWidth + 8, y + 2, pillW, NumberEdit.DISTANCE, distanceValueText(),
+			maxDistance == UNLIMITED_DISTANCE ? "" : Integer.toString(maxDistance));
 	}
 
 	private String distanceValueText() {
@@ -796,7 +940,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private int distancePillWidth() {
-		String longest = Component.translatable("screen.noobs_container_searcher.distance_value", MAX_DISTANCE).getString();
+		String longest = Component.translatable("screen.noobs_container_searcher.distance_value", MAX_CUSTOM_DISTANCE).getString();
 		String unlimited = Component.translatable("screen.noobs_container_searcher.distance_unlimited").getString();
 		return Math.max(font.width(longest), font.width(unlimited)) + 14;
 	}
@@ -1449,50 +1593,69 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private void renderSettingsTab(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		if (serversView) {
+			renderServersView(g, bx, by, bw, bh, footerY);
+			return;
+		}
 		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.footer_settings").getString(), "");
-		int cw = Math.min(520, bw);
+		int cw = Math.min(640, bw);
 
 		card(g, bx, by + 4, cw, 72, SURFACE, BORDER);
 		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_distance_title").withStyle(ChatFormatting.BOLD), bx + 14, by + 14, TEXT_PRIMARY);
 		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_distance_hint").getString(), cw - 28), bx + 14, by + 26, TEXT_MUTED);
 		renderDistanceRow(g, bx + 14, by + 46, cw - 28);
 
-		int yd = by + 4 + 72 + 8;
-		toggleCard(g, bx, yd, cw, "screen.noobs_container_searcher.settings_item_display_title",
+		int yh = by + 4 + 72 + 8;
+		renderDurationCard(g, bx, yh, cw);
+
+		// the toggles sit two per row so the whole page still fits
+		int half = (cw - 8) / 2;
+		int rx = bx + half + 8;
+		int yd = yh + 52 + 8;
+		toggleCard(g, bx, yd, half, "screen.noobs_container_searcher.settings_item_display_title",
 			"screen.noobs_container_searcher.settings_item_display_hint", ModSettings.itemDisplayEnabled(),
 			() -> ModSettings.get().setItemDisplay(!ModSettings.itemDisplayEnabled()));
-
-		int yc = yd + 38 + 8;
-		toggleCard(g, bx, yc, cw, "screen.noobs_container_searcher.locations_color_title",
+		toggleCard(g, rx, yd, half, "screen.noobs_container_searcher.locations_color_title",
 			"screen.noobs_container_searcher.locations_color_hint", ModSettings.get().locationColors,
 			() -> ModSettings.get().setLocationColors(!ModSettings.get().locationColors));
 
-		int yt = yc + 38 + 8;
-		toggleCard(g, bx, yt, cw, "screen.noobs_container_searcher.settings_changes_title",
+		int yt = yd + 38 + 8;
+		toggleCard(g, bx, yt, half, "screen.noobs_container_searcher.settings_changes_title",
 			"screen.noobs_container_searcher.settings_changes_hint", ModSettings.trackChangesEnabled(),
 			() -> ModSettings.get().setTrackChanges(!ModSettings.trackChangesEnabled()));
-
-		int ya = yt + 38 + 8;
-		toggleCard(g, bx, ya, cw, "screen.noobs_container_searcher.settings_arrows_title",
+		toggleCard(g, rx, yt, half, "screen.noobs_container_searcher.settings_arrows_title",
 			"screen.noobs_container_searcher.settings_arrows_hint", ModSettings.targetArrowsEnabled(),
 			() -> ModSettings.get().setTargetArrows(!ModSettings.targetArrowsEnabled()));
 
-		int y2 = ya + 38 + 8;
-		card(g, bx, y2, cw, 70, SURFACE, BORDER);
-		g.text(font, Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD), bx + 14, y2 + 12, TEXT_PRIMARY);
+		int y2 = yt + 38 + 8;
+		card(g, bx, y2, cw, 62, SURFACE, BORDER);
+		Component clearTitle = Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD);
+		if (viewingKey != null) {
+			clearTitle = clearTitle.copy().append(Component.literal("  " + serverDisplayName(viewingKey)).withStyle(ChatFormatting.RESET));
+		}
+		g.text(font, clearTitle, bx + 14, y2 + 9, TEXT_PRIMARY);
 		int items = 0;
 		for (ContainerRecord record : records) {
 			items += itemCount(record);
 		}
-		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_data_summary", records.size(), items).getString(), cw - 28),
-			bx + 14, y2 + 24, TEXT_MUTED);
+		if (dataBytes < 0) {
+			dataBytes = jsonBytes(records);
+		}
+		String summary = Component.translatable("screen.noobs_container_searcher.settings_data_summary", records.size(), items).getString()
+			+ " | " + Component.translatable("screen.noobs_container_searcher.settings_data_size", formatBytes(dataBytes)).getString();
+		g.text(font, trim(summary, cw - 28), bx + 14, y2 + 21, TEXT_MUTED);
 		String delete = Component.translatable("screen.noobs_container_searcher.clear_data").getString();
 		int dw = font.width(delete) + 28;
-		drawButton(g, bx + 14, y2 + 40, dw, 20, delete, DANGER, DANGER_HOVER, DANGER_DARK, true, null);
-		hit(bx + 14, y2 + 40, dw, 20, this::confirmClearData);
-		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_irreversible"), bx + 14 + dw + 10, y2 + 46, TEXT_MUTED);
+		drawButton(g, bx + 14, y2 + 34, dw, 20, delete, DANGER, DANGER_HOVER, DANGER_DARK, true, null);
+		hit(bx + 14, y2 + 34, dw, 20, this::confirmClearData);
+		String others = Component.translatable("screen.noobs_container_searcher.servers_button").getString();
+		int ow = font.width(others) + 28;
+		drawButton(g, bx + 14 + dw + 8, y2 + 34, ow, 20, others, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, null);
+		hit(bx + 14 + dw + 8, y2 + 34, ow, 20, this::openServersView);
+		String irreversible = Component.translatable("screen.noobs_container_searcher.settings_irreversible").getString();
+		g.text(font, irreversible, bx + cw - 14 - font.width(irreversible), y2 + 9, TEXT_MUTED);
 
-		int y3 = y2 + 70 + 8;
+		int y3 = y2 + 62 + 8;
 		if (y3 + 26 <= by + bh) {
 			boolean statsOn = Analytics.isEnabled();
 			card(g, bx, y3, cw, 26, SURFACE, BORDER);
@@ -1504,6 +1667,282 @@ public final class ContainerSearchScreen extends CompatScreen {
 			rfill(g, statsOn ? sx + 14 : sx + 2, sy + 2, 8, 6, TEXT_PRIMARY, 1);
 			hit(sx, sy, 24, 10, () -> Analytics.setEnabled(!Analytics.isEnabled()));
 		}
+
+		int y4 = y3 + 26 + 8;
+		if (y4 + 38 <= by + bh) {
+			renderSupportCard(g, bx, y4, cw);
+		}
+	}
+
+	private void renderSupportCard(Gfx g, int x, int y, int w) {
+		card(g, x, y, w, 38, SURFACE, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.support_title").withStyle(ChatFormatting.BOLD), x + 14, y + 8, TEXT_PRIMARY);
+		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.support_hint").getString(), w - 28 - 120), x + 14, y + 21, TEXT_MUTED);
+		String label = Component.translatable("screen.noobs_container_searcher.discord_button").getString();
+		int bw = 16 + font.width(label) + 22;
+		int bx = x + w - 14 - bw;
+		boolean hover = hovered(bx, y + 9, bw, 20);
+		card(g, bx, y + 9, bw, 20, hover ? SURFACE_HI : SURFACE, hover ? DISCORD_HOVER : BORDER_HI);
+		g.icon("icon_discord", bx + 6, y + 11, 16);
+		g.text(font, label, bx + 26, y + 15, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
+		hit(bx, y + 9, bw, 20, this::openDiscord);
+	}
+
+	private record ServerSummary(String key, String name, boolean multiplayer, boolean current, int containers, int items, long bytes) { }
+
+	// "multiplayer:ip#hash" -> "ip #abcd", "singleplayer:folder" -> "folder"
+	private static String serverDisplayName(String key) {
+		String name = key;
+		String world = "";
+		int hash = name.indexOf('#');
+		if (hash >= 0) {
+			String id = name.substring(hash + 1);
+			world = " #" + id.substring(Math.max(0, id.length() - 4));
+			name = name.substring(0, hash);
+		}
+		return name.substring(name.indexOf(':') + 1) + world;
+	}
+
+	private static long jsonBytes(List<ContainerRecord> list) {
+		return new com.google.gson.Gson().toJson(list).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+	}
+
+	private static String formatBytes(long bytes) {
+		if (bytes < 1024) {
+			return bytes + " B";
+		}
+		double kb = bytes / 1024.0D;
+		if (kb < 1024) {
+			return String.format(Locale.ROOT, kb < 10 ? "%.1f KB" : "%.0f KB", kb);
+		}
+		double mb = kb / 1024.0D;
+		if (mb < 1024) {
+			return String.format(Locale.ROOT, mb < 10 ? "%.2f MB" : "%.1f MB", mb);
+		}
+		return String.format(Locale.ROOT, "%.2f GB", mb / 1024.0D);
+	}
+
+	private String currentServerKey() {
+		return minecraft != null && minecraft.level != null ? ContainerSearcherClient.serverKey(minecraft) : "";
+	}
+
+	private void openDiscord() {
+		Compat.openLink(this, DISCORD_URL);
+	}
+
+	private void openServersView() {
+		serversView = true;
+		serverScroll = 0;
+		loadServerSummaries();
+	}
+
+	private void loadServerSummaries() {
+		serverSummaries.clear();
+		String current = currentServerKey();
+		for (Map.Entry<String, List<ContainerRecord>> entry : controller.allServerData().entrySet()) {
+			List<ContainerRecord> list = entry.getValue();
+			int items = 0;
+			for (ContainerRecord record : list) {
+				items += itemCount(record);
+			}
+			String key = entry.getKey();
+			serverSummaries.add(new ServerSummary(key, serverDisplayName(key), key.startsWith("multiplayer:"), key.equals(current), list.size(), items, jsonBytes(list)));
+		}
+		serverSummaries.sort(Comparator.comparing((ServerSummary summary) -> !summary.current())
+			.thenComparing(summary -> summary.name().toLowerCase(Locale.ROOT)));
+	}
+
+	private void renderServersView(Gfx g, int bx, int by, int bw, int bh, int footerY) {
+		long total = 0;
+		for (ServerSummary summary : serverSummaries) {
+			total += summary.bytes();
+		}
+		footer(g, footerY, Component.translatable("screen.noobs_container_searcher.servers_total", formatBytes(total), serverSummaries.size()).getString(), "");
+		int cw = Math.min(640, bw);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.servers_title").withStyle(ChatFormatting.BOLD), bx, by + 4, TEXT_PRIMARY);
+		String back = Component.translatable("screen.noobs_container_searcher.servers_back").getString();
+		int backW = font.width(back) + 28;
+		drawButton(g, bx + cw - backW, by - 2, backW, 20, back, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, null);
+		hit(bx + cw - backW, by - 2, backW, 20, () -> serversView = false);
+
+		int listY = by + 24;
+		int listH = Math.max(34, by + bh - listY);
+		int stride = 34;
+		int content = serverSummaries.size() * stride;
+		serverScroll = clampScroll(serverScroll, content, listH);
+		g.enableScissor(bx, listY, bx + cw, listY + listH);
+		int rowY = listY - (int) serverScroll;
+		for (ServerSummary summary : serverSummaries) {
+			if (rowY + 30 >= listY && rowY <= listY + listH) {
+				renderServerRow(g, summary, bx, rowY, cw - (content > listH ? 8 : 0), listY, listH);
+			}
+			rowY += stride;
+		}
+		g.disableScissor();
+		if (serverSummaries.isEmpty()) {
+			g.text(font, Component.translatable("screen.noobs_container_searcher.servers_empty"), bx + 4, listY + 6, TEXT_MUTED);
+		}
+		if (content > listH) {
+			scrollbar(g, bx + cw - 3, listY, listH, serverScroll, content);
+		}
+		scrollArea(bx, listY, cw, listH, amount -> serverScroll = clampScroll(serverScroll - amount * stride, content, listH));
+	}
+
+	private void renderServerRow(Gfx g, ServerSummary summary, int x, int y, int w, int viewY, int viewH) {
+		card(g, x, y, w, 30, SURFACE, summary.key().equals(viewingKey) ? ACCENT : BORDER);
+		String delete = Component.translatable("screen.noobs_container_searcher.servers_delete").getString();
+		String view = Component.translatable("screen.noobs_container_searcher.servers_view").getString();
+		int deleteW = font.width(delete) + 20;
+		int viewW = font.width(view) + 20;
+		int deleteX = x + w - 8 - deleteW;
+		drawButton(g, deleteX, y + 5, deleteW, 20, delete, DANGER, DANGER_HOVER, DANGER_DARK, true, null);
+		hitClipped(deleteX, y + 5, deleteW, 20, x, viewY, w, viewH, () -> confirmDeleteServer(summary));
+		int viewX = deleteX - 6 - viewW;
+		drawButton(g, viewX, y + 5, viewW, 20, view, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, null);
+		hitClipped(viewX, y + 5, viewW, 20, x, viewY, w, viewH, () -> viewServer(summary));
+
+		int textMax = viewX - x - 20;
+		String name = trim(summary.name(), textMax);
+		g.text(font, name, x + 8, y + 5, TEXT_PRIMARY);
+		if (summary.current()) {
+			String mark = Component.translatable("screen.noobs_container_searcher.servers_current").getString();
+			g.text(font, mark, x + 8 + font.width(name) + 6, y + 5, SUCCESS);
+		}
+		String kind = Component.translatable(summary.multiplayer() ? "screen.noobs_container_searcher.server_kind_multi" : "screen.noobs_container_searcher.server_kind_single").getString();
+		String stats = kind + "  " + Component.translatable("screen.noobs_container_searcher.servers_stats", summary.containers(), summary.items(), formatBytes(summary.bytes())).getString();
+		g.text(font, trim(stats, textMax), x + 8, y + 17, TEXT_MUTED);
+	}
+
+	private void viewServer(ServerSummary summary) {
+		if (summary.current()) {
+			endViewing();
+		} else {
+			if (viewingKey == null) {
+				ownRecords = new ArrayList<>(records);
+			}
+			viewingKey = summary.key();
+			records.clear();
+			records.addAll(controller.allServerData().getOrDefault(summary.key(), List.of()));
+		}
+		dataBytes = -1;
+		resultScroll = 0;
+		rebuild();
+		switchTab(Tab.SEARCH);
+	}
+
+	private void endViewing() {
+		if (viewingKey == null) {
+			return;
+		}
+		records.clear();
+		records.addAll(ownRecords);
+		viewingKey = null;
+		ownRecords = null;
+		dataBytes = -1;
+		resultScroll = 0;
+		rebuild();
+	}
+
+	private void confirmDeleteServer(ServerSummary summary) {
+		Compat.setScreen(minecraft, new ConfirmScreen(
+			confirmed -> {
+				if (confirmed) {
+					deleteServerData(summary);
+				}
+				Compat.setScreen(minecraft, this);
+			},
+			Component.translatable("screen.noobs_container_searcher.servers_delete_title"),
+			Component.translatable("screen.noobs_container_searcher.servers_delete_message", summary.name())
+		));
+	}
+
+	private void deleteServerData(ServerSummary summary) {
+		if (summary.current()) {
+			controller.clearServerData(minecraft);
+			if (viewingKey == null) {
+				records.clear();
+			} else {
+				ownRecords.clear();
+			}
+		} else {
+			controller.clearServerKey(summary.key());
+			if (summary.key().equals(viewingKey)) {
+				endViewing();
+			}
+		}
+		dataBytes = -1;
+		resultScroll = 0;
+		rebuild();
+		loadServerSummaries();
+	}
+
+	private void renderDurationCard(Gfx g, int x, int y, int w) {
+		card(g, x, y, w, 52, SURFACE, BORDER);
+		g.text(font, Component.translatable("screen.noobs_container_searcher.settings_duration_title").withStyle(ChatFormatting.BOLD), x + 14, y + 7, TEXT_PRIMARY);
+		g.text(font, trim(Component.translatable("screen.noobs_container_searcher.settings_duration_hint").getString(), w - 28), x + 14, y + 18, TEXT_MUTED);
+
+		int rowY = y + 30;
+		int pillW = font.width(durationText(MAX_DURATION_SECONDS)) + 14;
+		durationSliderX = x + 14;
+		durationSliderWidth = Math.max(40, w - 28 - pillW - 8);
+		int trackY = rowY + 8;
+		g.fill(durationSliderX, trackY - 2, durationSliderX + durationSliderWidth, trackY + 2, INPUT_BG);
+		g.outline(durationSliderX, trackY - 2, durationSliderWidth, 4, BORDER);
+		double ratio = Math.min(1.0D, ModSettings.highlightSeconds() / (double) DURATION_SLIDER_MAX);
+		int knob = durationSliderX + (int) Math.round(ratio * durationSliderWidth);
+		g.fill(durationSliderX + 1, trackY - 1, knob, trackY + 1, ACCENT);
+		boolean hover = hovered(durationSliderX, rowY, durationSliderWidth, 16) || draggingDurationSlider;
+		rfill(g, knob - 3, trackY - 6, 7, 12, INPUT_BG, 1);
+		rfill(g, knob - 2, trackY - 5, 5, 10, hover ? TEXT_PRIMARY : ACCENT_HOVER, 1);
+		hit(durationSliderX - 3, rowY, durationSliderWidth + 7, 16, () -> {
+			draggingDurationSlider = true;
+			updateDurationSlider(mx);
+		});
+		numberPill(g, durationSliderX + durationSliderWidth + 8, rowY, pillW, NumberEdit.DURATION,
+			durationText(ModSettings.highlightSeconds()), Integer.toString(ModSettings.highlightSeconds()));
+	}
+
+	private static String durationText(int seconds) {
+		return Component.translatable("screen.noobs_container_searcher.duration_value", seconds).getString();
+	}
+
+	private void updateDurationSlider(double mouseX) {
+		double ratio = Math.max(0, Math.min(1, (mouseX - durationSliderX) / durationSliderWidth));
+		ModSettings.get().setHighlightSeconds(Math.max(5, (int) Math.round(ratio * DURATION_SLIDER_MAX / 5.0D) * 5));
+	}
+
+	// value pill: click it to type your own number instead of using the slider
+	private void numberPill(Gfx g, int x, int y, int w, NumberEdit target, String shown, String current) {
+		if (numberEdit == target) {
+			card(g, x, y, w, 16, INPUT_BG, ACCENT);
+			numberBox.setX(x + 6);
+			numberBox.setY(y + 4);
+			numberBox.setWidth(w - 12);
+			numberBox.setHeight(10);
+			numberBox.setVisible(true);
+			return;
+		}
+		boolean hover = hovered(x, y, w, 16);
+		rfill(g, x, y, w, 16, hover ? ACCENT : ACCENT_BG, 1);
+		g.centeredText(font, Component.literal(shown), x + w / 2, y + 4, TEXT_PRIMARY);
+		hit(x, y, w, 16, () -> startNumberEdit(target, current));
+	}
+
+	private void startNumberEdit(NumberEdit target, String current) {
+		numberEdit = NumberEdit.NONE;
+		numberBox.setValue(current);
+		numberEdit = target;
+		numberBox.setVisible(true);
+		focusBox(numberBox);
+	}
+
+	private void closeNumberEdit() {
+		if (numberEdit == NumberEdit.NONE) {
+			return;
+		}
+		numberEdit = NumberEdit.NONE;
+		numberBox.setVisible(false);
+		focusBox(null);
 	}
 
 	private void toggleCard(Gfx g, int bx, int y, int cw, String titleKey, String hintKey, boolean on, Runnable action) {
@@ -1627,16 +2066,19 @@ public final class ContainerSearchScreen extends CompatScreen {
 	private int drawChip(Gfx g, ChipSpec spec, int x, int y) {
 		int w = chipWidth(spec);
 		boolean hover = hovered(x, y, w, 14);
-		card(g, x, y, w, 14, spec.active ? ACCENT_BG : hover ? SURFACE_HI : SURFACE, spec.active ? ACCENT : BORDER);
+		card(g, x, y, w, 14, spec.excluded ? DANGER_BG : spec.active ? ACCENT_BG : hover ? SURFACE_HI : SURFACE, spec.excluded ? DANGER_DARK : spec.active ? ACCENT : BORDER);
 		int cx = x + 6;
 		String label = chipLabel(spec);
-		g.text(font, label, cx, y + 3, spec.active ? TEXT_PRIMARY : spec.dot != 0 ? spec.dot : TEXT_SECONDARY);
+		g.text(font, label, cx, y + 3, spec.excluded ? DANGER_HOVER : spec.active ? TEXT_PRIMARY : spec.dot != 0 ? spec.dot : TEXT_SECONDARY);
+		if (spec.excluded) {
+			g.fill(cx, y + 7, cx + font.width(label), y + 8, DANGER_HOVER);
+		}
 		cx += font.width(label);
 		if (spec.count >= 0) {
 			g.text(font, Integer.toString(spec.count), cx + 4, y + 3, TEXT_MUTED);
 		}
 		if (spec.closable) {
-			icon(g, ICON_X, x + w - 10, y + 5, ACCENT_HOVER);
+			icon(g, ICON_CLOSE, x + w - 11, y + 4, ACCENT_HOVER);
 		}
 		hit(x, y, w, 14, spec.click);
 		return w;
@@ -1671,7 +2113,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 		hit(x, y, w, h, () -> focusBox(box));
 		if (showClear) {
 			boolean hover = hovered(x + w - 16, y, 16, h);
-			icon(g, ICON_X, x + w - 12, y + h / 2 - 2, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
+			icon(g, ICON_CLOSE, x + w - 13, y + h / 2 - 3, hover ? TEXT_PRIMARY : TEXT_SECONDARY);
 			hit(x + w - 16, y, 16, h, () -> {
 				box.setValue("");
 				focusBox(box);
@@ -1709,6 +2151,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 			return false;
 		}
 		ctrlDown = ctrl;
+		closeNumberEdit();
 		for (int i = hits.size() - 1; i >= 0; i--) {
 			Hit hit = hits.get(i);
 			if (hit.contains(mouseX, mouseY)) {
@@ -1724,14 +2167,22 @@ public final class ContainerSearchScreen extends CompatScreen {
 			updateDistanceSlider(mouseX);
 			return true;
 		}
+		if (draggingDurationSlider) {
+			updateDurationSlider(mouseX);
+			return true;
+		}
 		return false;
 	}
 
 	private void release() {
 		draggingDistanceSlider = false;
+		draggingDurationSlider = false;
 	}
 
 	private boolean editKey(java.util.function.Predicate<EditBox> press) {
+		if (numberEdit != NumberEdit.NONE && press.test(numberBox)) {
+			return true;
+		}
 		if (tab == Tab.SEARCH && (press.test(searchBox) || press.test(filterSearchBox))) {
 			return true;
 		}
@@ -1787,20 +2238,11 @@ public final class ContainerSearchScreen extends CompatScreen {
 		Compat.setScreen(minecraft, null);
 	}
 
+	// deletes what the list is showing: this server, or the other server we are currently viewing
 	private void confirmClearData() {
-		Compat.setScreen(minecraft, new ConfirmScreen(
-			confirmed -> {
-				if (confirmed) {
-					controller.clearServerData(minecraft);
-					records.clear();
-					resultScroll = 0;
-					rebuild();
-				}
-				Compat.setScreen(minecraft, this);
-			},
-			Component.translatable("screen.noobs_container_searcher.clear_data_title"),
-			Component.translatable("screen.noobs_container_searcher.clear_data_message")
-		));
+		String currentKey = currentServerKey();
+		String key = viewingKey != null ? viewingKey : currentKey;
+		confirmDeleteServer(new ServerSummary(key, serverDisplayName(key), key.startsWith("multiplayer:"), key.equals(currentKey), 0, 0, 0));
 	}
 
 	private void beginSelection() {
@@ -1869,19 +2311,27 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private void rebuild() {
+		typeMatchCache.clear();
 		rows.clear();
 		filters.clear();
 		containerTypes.clear();
-		String query = searchBox == null ? "" : searchBox.getValue().trim().toLowerCase(Locale.ROOT);
+		QuerySplit split = splitQuery(searchBox == null ? "" : searchBox.getValue().trim().toLowerCase(Locale.ROOT));
+		String query = split.itemQuery();
 		String filterQuery = filterSearchBox == null ? "" : normalizedSearch(filterSearchBox.getValue());
 		Map<String, FilterEntry> filterMap = new LinkedHashMap<>();
 		Map<String, ContainerTypeEntry> containerTypeMap = new LinkedHashMap<>();
 		addFixedFilters(filterMap);
 
 		Map<String, ResultRow> rowMap = new LinkedHashMap<>();
+		ContainerRecord ender = enderRepresentative();
 		for (ContainerRecord record : records) {
+			// all ender chests share one inventory, list it once on the best one
+			if (isEnderChest(record) && record != ender) {
+				continue;
+			}
 			countContainerType(containerTypeMap, record);
-			if (!passesDistance(record) || !passesContainerType(record, containerTypeMap) || !passesLocation(record)) {
+			if (!passesDistance(record) || !passesContainerType(record, containerTypeMap) || !passesLocation(record)
+				|| !passesRecordQuery(record, split)) {
 				continue;
 			}
 			for (ContainerItemRecord item : entries(record)) {
@@ -1952,11 +2402,19 @@ public final class ContainerSearchScreen extends CompatScreen {
 				matches.put(recordIdentity(other.record), other.record);
 			}
 		}
+		// the ender inventory is listed once, but every standing ender chest we know should light up and get named in chat
+		if (isEnderChest(row.record) && !row.record.blockGone) {
+			for (ContainerRecord other : records) {
+				if (isEnderChest(other) && !other.blockGone) {
+					matches.put(recordIdentity(other), other);
+				}
+			}
+		}
 		return new ArrayList<>(matches.values());
 	}
 
 	private static String rowKey(ContainerRecord record, ContainerItemRecord item) {
-		return recordIdentity(record) + "|" + itemVariantKey(item);
+		return recordIdentity(record) + "|" + (item.inside == null ? "" : item.inside) + "|" + itemVariantKey(item);
 	}
 
 	private static String itemVariantKey(ContainerItemRecord item) {
@@ -2001,8 +2459,126 @@ public final class ContainerSearchScreen extends CompatScreen {
 		return true;
 	}
 
+	// search box words that are about the container itself (include:, exclude:, loc:), the rest is matched per item
+	private record QuerySplit(String itemQuery, List<String> include, List<String> exclude, List<String> locations) { }
+
+	private static QuerySplit splitQuery(String query) {
+		List<String> include = new ArrayList<>();
+		List<String> exclude = new ArrayList<>();
+		List<String> locations = new ArrayList<>();
+		StringBuilder rest = new StringBuilder();
+		for (String token : query.split("\\s+")) {
+			int colon = token.indexOf(':');
+			String key = colon < 0 ? "" : token.substring(0, colon);
+			List<String> target = switch (key) {
+				case "include", "type", "tur", "tür" -> include;
+				case "exclude", "ex", "not", "haric", "hariç" -> exclude;
+				case "loc", "location", "konum" -> locations;
+				default -> null;
+			};
+			if (target == null) {
+				rest.append(token).append(' ');
+				continue;
+			}
+			for (String value : token.substring(colon + 1).split(",")) {
+				if (!value.isBlank()) {
+					target.add(value.trim().replace(' ', '_'));
+				}
+			}
+		}
+		return new QuerySplit(rest.toString().trim(), include, exclude, locations);
+	}
+
+	private boolean passesRecordQuery(ContainerRecord record, QuerySplit split) {
+		if (!split.include().isEmpty() && split.include().stream().noneMatch(value -> matchesContainerTypeName(record, value))) {
+			return false;
+		}
+		if (split.exclude().stream().anyMatch(value -> matchesContainerTypeName(record, value))) {
+			return false;
+		}
+		if (!split.locations().isEmpty()) {
+			ModSettings.Location loc = locationFor(record);
+			String name = loc == null ? "" : loc.name.toLowerCase(Locale.ROOT).replace(' ', '_');
+			return split.locations().stream().anyMatch(name::contains);
+		}
+		return true;
+	}
+
+	// a full name ("chest", "shulker_box" for any colour) wins; otherwise a start of a name or of one of its
+	// words counts ("che" finds chests, "dro" droppers), and as a last try any part of the id or shown name
+	private boolean matchesContainerTypeName(ContainerRecord record, String value) {
+		if (record.containerType == null) {
+			return false;
+		}
+		return typesFor(value).contains(record.containerType);
+	}
+
+	private Set<String> typesFor(String value) {
+		return typeMatchCache.computeIfAbsent(value, this::findTypes);
+	}
+
+	private Set<String> findTypes(String value) {
+		Set<String> ids = new LinkedHashSet<>();
+		for (ContainerRecord known : records) {
+			if (known.containerType != null) {
+				ids.add(known.containerType);
+			}
+		}
+		Set<String> exact = new LinkedHashSet<>();
+		Set<String> prefix = new LinkedHashSet<>();
+		Set<String> inside = new LinkedHashSet<>();
+		for (String stored : ids) {
+			String id = stored.toLowerCase(Locale.ROOT);
+			String path = id.substring(id.lastIndexOf(':') + 1);
+			String shown = containerName(stored).getString().toLowerCase(Locale.ROOT).replace(' ', '_');
+			if (path.equals(value) || shown.equals(value)
+				|| (value.equals("shulker") || value.equals("shulker_box")) && path.contains("shulker_box")) {
+				exact.add(stored);
+			}
+			boolean starts = path.startsWith(value) || shown.startsWith(value);
+			for (String word : path.split("_")) {
+				starts |= word.startsWith(value);
+			}
+			if (starts) {
+				prefix.add(stored);
+			}
+			if (id.contains(value) || shown.contains(value)) {
+				inside.add(stored);
+			}
+		}
+		return !exact.isEmpty() ? exact : !prefix.isEmpty() ? prefix : inside;
+	}
+
 	private static boolean matchesToken(ContainerItemRecord item, String token) {
 		String currentName = localizedItemName(item).toLowerCase(Locale.ROOT);
+		if (token.startsWith("is:")) {
+			String flag = switch (token.substring(3)) {
+				case "enchanted" -> "flag:enchanted";
+				case "unenchanted" -> "flag:unenchanted";
+				case "lore" -> "flag:lore";
+				case "damaged" -> "flag:damaged";
+				case "full", "full_durability" -> "flag:full_durability";
+				case "low", "low_durability" -> "flag:low_durability";
+				case "shulker", "in_shulker" -> "flag:in_shulker";
+				default -> null;
+			};
+			return flag != null && passesFilter(item, flag);
+		}
+		if (token.startsWith("enchant:") || token.startsWith("buyu:")) {
+			String value = token.substring(token.indexOf(':') + 1).replace('_', ' ');
+			for (int i = 0; i < item.enchantments.size(); i++) {
+				String id = item.enchantments.get(i).toLowerCase(Locale.ROOT).replace('_', ' ');
+				String shown = i < item.enchantmentNames.size() ? item.enchantmentNames.get(i).toLowerCase(Locale.ROOT) : "";
+				if (id.contains(value) || shown.contains(value)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if (token.startsWith("inside:") || token.startsWith("icinde:")) {
+			String value = token.substring(token.indexOf(':') + 1).replace('_', ' ');
+			return item.inside != null && item.inside.toLowerCase(Locale.ROOT).contains(value);
+		}
 		if (token.equals("enchanted") || token.equals("buyulu") || token.equals("büyülü")) {
 			return item.enchanted;
 		}
@@ -2033,6 +2609,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 		filters.put("flag:damaged", new FilterEntry("flag:damaged", Component.translatable("screen.noobs_container_searcher.filter_damaged").getString(), 0));
 		filters.put("flag:full_durability", new FilterEntry("flag:full_durability", Component.translatable("screen.noobs_container_searcher.filter_full_durability").getString(), 0));
 		filters.put("flag:low_durability", new FilterEntry("flag:low_durability", Component.translatable("screen.noobs_container_searcher.filter_low_durability").getString(), 0));
+		filters.put("flag:in_shulker", new FilterEntry("flag:in_shulker", Component.translatable("screen.noobs_container_searcher.filter_in_shulker").getString(), 0));
 	}
 
 	private static void countContainerType(Map<String, ContainerTypeEntry> types, ContainerRecord record) {
@@ -2064,6 +2641,9 @@ public final class ContainerSearchScreen extends CompatScreen {
 		if (item.damageable && durabilityPercent(item) <= 25) {
 			filters.get("flag:low_durability").count += item.count;
 		}
+		if (item.inside != null) {
+			filters.get("flag:in_shulker").count += item.count;
+		}
 	}
 
 	private static boolean passesFilter(ContainerItemRecord item, String filter) {
@@ -2074,6 +2654,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 			case "flag:damaged" -> item.damageable && item.damage > 0;
 			case "flag:full_durability" -> item.damageable && item.damage == 0;
 			case "flag:low_durability" -> item.damageable && durabilityPercent(item) <= 25;
+			case "flag:in_shulker" -> item.inside != null;
 			default -> filter.startsWith("ench:") && item.enchantments.contains(filter.substring("ench:".length()));
 		};
 	}
@@ -2152,6 +2733,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 			case "flag:damaged" -> DANGER;
 			case "flag:full_durability" -> SUCCESS;
 			case "flag:low_durability" -> WARNING;
+			case "flag:in_shulker" -> containerColor("shulker");
 			default -> TEXT_PRIMARY;
 		};
 	}
@@ -2301,7 +2883,7 @@ public final class ContainerSearchScreen extends CompatScreen {
 
 
 	private boolean passesDistance(ContainerRecord record) {
-		if (maxDistance == UNLIMITED_DISTANCE || minecraft == null || minecraft.player == null || minecraft.level == null) {
+		if (viewingKey != null || maxDistance == UNLIMITED_DISTANCE || minecraft == null || minecraft.player == null || minecraft.level == null) {
 			return true;
 		}
 		if (!ContainerSearcherClient.dimensionKey(minecraft).equals(record.dimension)) {
@@ -2330,6 +2912,9 @@ public final class ContainerSearchScreen extends CompatScreen {
 	}
 
 	private boolean passesContainerType(ContainerRecord record, Map<String, ContainerTypeEntry> containerTypeMap) {
+		if (record.containerType != null && ModSettings.get().isTypeExcluded(containerTypeKey(record.containerType))) {
+			return false;
+		}
 		if (selectedContainerTypeKeys.isEmpty()) {
 			return true;
 		}

@@ -15,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class HighlightManager {
-	private static final long HIGHLIGHT_DURATION_MILLIS = 60_000L;
 	public static final int HIGHLIGHT_COLOR = 0xFFFFFF55;
 	public static final float LINE_WIDTH = 2.0F;
 
@@ -38,7 +37,7 @@ public final class HighlightManager {
 			return;
 		}
 
-		long expiresAt = System.currentTimeMillis() + HIGHLIGHT_DURATION_MILLIS;
+		long expiresAt = System.currentTimeMillis() + ModSettings.highlightMillis();
 		for (ContainerRecord record : records) {
 			if (record.entityUuid != null && !record.entityUuid.isBlank()) {
 				glowingVillagers.put(record.entityUuid, expiresAt);
@@ -136,7 +135,7 @@ public final class HighlightManager {
 			if (record.entityUuid != null && !record.entityUuid.isBlank()) {
 				continue;
 			}
-			if (record.items.isEmpty() || !currentDimension.equals(record.dimension)) {
+			if (record.items.isEmpty() || record.blockGone || !currentDimension.equals(record.dimension)) {
 				continue;
 			}
 			BlockPos pos = new BlockPos(record.x, record.y, record.z);

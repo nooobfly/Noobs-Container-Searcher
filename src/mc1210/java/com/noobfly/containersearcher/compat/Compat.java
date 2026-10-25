@@ -1,6 +1,7 @@
 package com.noobfly.containersearcher.compat;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
@@ -15,6 +16,11 @@ public final class Compat {
 
 	public static Screen screen(Minecraft client) {
 		return client.screen;
+	}
+
+	// asks before opening a link in the browser
+	public static void openLink(Screen parent, String url) {
+		ConfirmLinkScreen.confirmLinkNow(parent, url);
 	}
 
 	public static void setScreen(Minecraft client, Screen screen) {

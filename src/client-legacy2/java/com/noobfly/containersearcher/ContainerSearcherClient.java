@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -19,6 +20,7 @@ import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
@@ -34,6 +36,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.EnderChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -174,6 +177,10 @@ public final class ContainerSearcherClient {
 				continue;
 			}
 
+			if (record.blockGone) {
+				STALE_STRIKES.remove(key);
+				continue;
+			}
 			Boolean missing = record.entityUuid != null && !record.entityUuid.isBlank()
 				? isVillagerMissing(client, record)
 				: isContainerMissing(client, record);
@@ -189,7 +196,9 @@ public final class ContainerSearcherClient {
 				: STALE_CONFIRMATIONS;
 			if (strikes >= required) {
 				STALE_STRIKES.remove(key);
-				if (!keepSurvivingHalf(client, record)) {
+				if (isEnderChest(record)) {
+					markEnderGone(record);
+				} else if (!keepSurvivingHalf(client, record)) {
 					staleRecords.add(record);
 				}
 			}
@@ -338,6 +347,9 @@ public final class ContainerSearcherClient {
 		if (!level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
 			return false;
 		}
+		if (level.getBlockState(pos).getBlock() instanceof EnderChestBlock) {
+			return true;
+		}
 		BlockEntity blockEntity = level.getBlockEntity(pos);
 		if (blockEntity instanceof MenuProvider) {
 			return true;
@@ -412,8 +424,24 @@ public final class ContainerSearcherClient {
 		return slots == expected;
 	}
 
+	// plugin menus (virtual chests, shops...) open on the same right click, they must not count as the block
+	private static boolean isRealContainerMenu(
+		Minecraft client,
+		AbstractContainerScreen<?> screen,
+		AbstractContainerMenu menu,
+		BlockPos primaryPos,
+		BlockPos secondaryPos
+	) {
+		return isContainerBlock(client.level, primaryPos)
+			&& matchesContainerSize(client, menu, primaryPos, secondaryPos)
+			&& matchesContainerTitle(client, screen, primaryPos);
+	}
+
 	private static boolean matchesContainerTitle(Minecraft client, AbstractContainerScreen<?> screen, BlockPos pos) {
 		BlockState state = client.level.getBlockState(pos);
+		if (state.getBlock() instanceof EnderChestBlock) {
+			return Component.translatable("container.enderchest").getString().equals(screen.getTitle().getString());
+		}
 		MenuProvider provider = state.getMenuProvider(client.level, pos);
 		if (provider == null) {
 			return true;
@@ -422,6 +450,9 @@ public final class ContainerSearcherClient {
 	}
 
 	private static int containerSize(Minecraft client, BlockPos pos) {
+		if (client.level.getBlockState(pos).getBlock() instanceof EnderChestBlock) {
+			return 27;
+		}
 		return client.level.getBlockEntity(pos) instanceof Container container ? container.getContainerSize() : 0;
 	}
 
@@ -462,15 +493,22 @@ public final class ContainerSearcherClient {
 			return;
 		}
 		long now = System.currentTimeMillis();
-		if (openContainerPos == null && pendingContainerPos != null && now <= pendingContainerExpiresAt) {
+		// server swapped in another menu while we thought a real chest was open
+		if (openContainerPos != null && menu.containerId != lastCapturedContainerId
+			&& !isRealContainerMenu(client, screen, menu, openContainerPos, openDuplicatePos)) {
+			openContainerPos = null;
+			openDuplicatePos = null;
+			return;
+		}
+		if (openContainerPos == null && pendingContainerPos != null && now <= pendingContainerExpiresAt
+			&& isRealContainerMenu(client, screen, menu, pendingContainerPos, pendingDuplicatePos)) {
 			openContainerPos = pendingContainerPos;
 			openDuplicatePos = pendingDuplicatePos;
 			pendingContainerPos = null;
 			pendingDuplicatePos = null;
 		}
 		if (openContainerPos == null && lookedContainerPos != null && now <= lookedContainerExpiresAt) {
-			if (!matchesContainerSize(client, menu, lookedContainerPos, lookedDuplicatePos)
-				|| !matchesContainerTitle(client, screen, lookedContainerPos)) {
+			if (!isRealContainerMenu(client, screen, menu, lookedContainerPos, lookedDuplicatePos)) {
 				return;
 			}
 			openContainerPos = lookedContainerPos;
@@ -498,6 +536,7 @@ public final class ContainerSearcherClient {
 				entries.add(itemRecord(client, stack, itemId));
 				fingerprint = 31 * fingerprint + itemId.hashCode();
 				fingerprint = 31 * fingerprint + stack.getCount();
+				fingerprint = 31 * fingerprint + addShulkerContents(client, stack, contents, entries);
 			} else {
 				fingerprint *= 31;
 			}
@@ -539,9 +578,39 @@ public final class ContainerSearcherClient {
 		record.items = contents;
 		record.entries = entries;
 		DATABASE.put(record, openDuplicatePos);
+		syncOtherEnderChests(record);
 		lastCapturedContainerId = menu.containerId;
 		lastCapturedFingerprint = fingerprint;
 		LOGGER.debug("{} konumundaki konteyner kaydedildi", openContainerPos);
+	}
+
+	// every ender chest shows the same inventory, so all the ones we know get the contents we just saw
+	private static void syncOtherEnderChests(ContainerRecord current) {
+		if (!"minecraft:ender_chest".equals(current.containerType)) {
+			return;
+		}
+		for (ContainerRecord other : DATABASE.allForServer(current.server)) {
+			boolean same = other.dimension.equals(current.dimension)
+				&& other.x == current.x && other.y == current.y && other.z == current.z;
+			if (same || !"minecraft:ender_chest".equals(other.containerType)) {
+				continue;
+			}
+			other.items = current.items;
+			other.entries = current.entries;
+			other.updatedAt = current.updatedAt;
+			DATABASE.put(other, null);
+		}
+	}
+
+	private static boolean isEnderChest(ContainerRecord record) {
+		return "minecraft:ender_chest".equals(record.containerType);
+	}
+
+	// the block is gone but the inventory lives on the player, so keep the items and just flag it
+	private static void markEnderGone(ContainerRecord record) {
+		record.blockGone = true;
+		DATABASE.put(record, null);
+		HIGHLIGHTS.removeAt(new BlockPos(record.x, record.y, record.z));
 	}
 
 	private void captureOpenVillager(Minecraft client, MerchantMenu menu) {
@@ -614,6 +683,31 @@ public final class ContainerSearcherClient {
 			.filter(key -> !VillagerProfession.NONE.equals(key))
 			.map(key -> key.location().toString())
 			.orElse(null);
+	}
+
+	// items packed inside a shulker box count as being in this container too, tagged with the box name
+	private static int addShulkerContents(Minecraft client, ItemStack box, Map<String, Integer> contents, List<ContainerItemRecord> entries) {
+		ItemContainerContents packed = box.get(DataComponents.CONTAINER);
+		if (packed == null) {
+			return 0;
+		}
+		String boxName = box.getHoverName().getString();
+		int hash = 0;
+		NonNullList<ItemStack> slots = NonNullList.withSize(27, ItemStack.EMPTY);
+		packed.copyInto(slots);
+		for (ItemStack inner : slots) {
+			if (inner.isEmpty()) {
+				continue;
+			}
+			String innerId = BuiltInRegistries.ITEM.getKey(inner.getItem()).toString();
+			contents.merge(innerId, inner.getCount(), Integer::sum);
+			ContainerItemRecord record = itemRecord(client, inner, innerId);
+			record.inside = boxName;
+			entries.add(record);
+			hash = 31 * hash + innerId.hashCode();
+			hash = 31 * hash + inner.getCount();
+		}
+		return hash;
 	}
 
 	private static ContainerItemRecord itemRecord(Minecraft client, ItemStack stack, String itemId) {

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.19
+
+### Added
+- Added an Include / Exclude switch next to the container type chips. Excluded types are hidden from the results and remembered.
+- Added a container icon next to the container name in the results.
+- Added support for items inside shulker boxes. They show up in the results as "in <box name>" and point at the container holding the box.
+- Added ender chest support. The ender inventory is listed once, on the nearest standing ender chest. Locating it highlights every ender chest you opened. If all of them were broken, the items stay listed with a "(removed)" tag and locating says so in chat.
+- Added an "In shulker box" quick filter.
+- Added `include:`, `exclude:`, `loc:`, `enchant:`, `inside:` and `is:` to the search box, for example `include:chest,shulker_box` or `exclude:dropper`. The start of a name is enough (`include:che`).
+- Added a highlight duration setting (5 to 300 seconds on the slider, up to 3600 typed in). Default is 60 seconds.
+- Added typing a custom search distance by clicking the distance value.
+- Added the size of the saved data to the Settings tab.
+- Added a "View other server data" page in Settings. It lists every server and world with its containers, items and size, and lets you view or delete each one.
+- Added a Discord button to the header and a Community card to Settings.
+
+### Fixed
+- Fixed the "No container types" text overlapping the footer divider.
+- Fixed menus that servers open on a right click (virtual chests, shops, plugin menus) being saved as the chest you clicked.
+
 ## 1.18
 
 ### Added

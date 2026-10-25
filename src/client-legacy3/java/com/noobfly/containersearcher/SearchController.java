@@ -253,6 +253,14 @@ public final class SearchController {
 		return 1;
 	}
 
+	java.util.Map<String, List<ContainerRecord>> allServerData() {
+		return database.allServers();
+	}
+
+	void clearServerKey(String server) {
+		database.clearServer(server);
+	}
+
 	void clearServerData(Minecraft client) {
 		database.clearServer(ContainerSearcherClient.serverKey(client));
 		highlights.clear(client);
@@ -297,6 +305,10 @@ public final class SearchController {
 			case "flag:low_durability" -> stack.isDamageableItem()
 				&& stack.getMaxDamage() > 0
 				&& Math.round((stack.getMaxDamage() - stack.getDamageValue()) * 100.0F / stack.getMaxDamage()) <= 25;
+			case "flag:in_shulker" -> {
+				var packed = stack.get(DataComponents.CONTAINER);
+				yield packed != null && !packed.equals(net.minecraft.world.item.component.ItemContainerContents.EMPTY);
+			}
 			default -> activeFilter.startsWith("ench:")
 				&& hasEnchantment(stack.get(DataComponents.ENCHANTMENTS), activeFilter.substring("ench:".length()))
 				|| activeFilter.startsWith("ench:")
