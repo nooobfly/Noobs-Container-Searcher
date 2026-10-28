@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.21
+
+### Fixed
+- Fixed container data being lost on Realms after leaving and rejoining. Thanks to waffles3383 for reporting this bug!
+
 ## 1.20
 
 ### Added

@@ -858,7 +858,10 @@ public final class ContainerSearcherClient {
 
 	static String serverKey(Minecraft client) {
 		if (client.getCurrentServer() != null) {
-			String base = "multiplayer:" + client.getCurrentServer().ip.toLowerCase(Locale.ROOT);
+			// realms hands out a different address and the name can be edited, the world seed (withWorldId) tells realms apart
+			String base = client.getCurrentServer().isRealm()
+				? "realms"
+				: "multiplayer:" + client.getCurrentServer().ip.toLowerCase(Locale.ROOT);
 			return client.level == null ? base : withWorldId(client, base);
 		}
 		if (client.getSingleplayerServer() != null) {
