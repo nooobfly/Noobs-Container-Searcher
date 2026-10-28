@@ -37,6 +37,10 @@ public final class ModSettings {
 	public boolean trackChanges = true;
 	public boolean targetArrows = true;
 	public int highlightSeconds = 60;
+	// which result buttons show, at least one stays on
+	public boolean locateOneButton = true;
+	public boolean locateAllButton = true;
+	public boolean locateFireworks = false;
 	public List<Location> locations = new ArrayList<>();
 	public List<String> rerollSelection = new ArrayList<>();
 	public List<String> excludedContainerTypes = new ArrayList<>();
@@ -69,6 +73,39 @@ public final class ModSettings {
 
 	public void setHighlightSeconds(int seconds) {
 		highlightSeconds = Math.max(1, Math.min(3600, seconds));
+		save();
+	}
+
+	public static boolean locateFireworksEnabled() {
+		return get().locateFireworks;
+	}
+
+	public void toggleLocateFireworks() {
+		locateFireworks = !locateFireworks;
+		save();
+	}
+
+	public static boolean locateOneEnabled() {
+		return get().locateOneButton || !get().locateAllButton;
+	}
+
+	public static boolean locateAllEnabled() {
+		return get().locateAllButton;
+	}
+
+	public void toggleLocateOne() {
+		if (locateOneButton && !locateAllButton) {
+			return;
+		}
+		locateOneButton = !locateOneButton;
+		save();
+	}
+
+	public void toggleLocateAll() {
+		if (locateAllButton && !locateOneButton) {
+			return;
+		}
+		locateAllButton = !locateAllButton;
 		save();
 	}
 

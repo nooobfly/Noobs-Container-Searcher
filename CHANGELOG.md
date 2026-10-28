@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.20
+
+### Added
+- Added a "Locate all" button to results. "Locate" now highlights only that container, "Locate all" highlights every container holding the same item and says so in chat. Thanks to Tally for suggesting this feature!
+- Added two Settings toggles to show either result button or both.
+- Added a "Fireworks on locate" setting (off by default). It shows fireworks above located containers while they are highlighted.
+
 ## 1.19
 
 ### Added

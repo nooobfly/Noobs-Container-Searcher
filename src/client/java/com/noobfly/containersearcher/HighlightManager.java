@@ -1,8 +1,12 @@
 package com.noobfly.containersearcher;
 
+import com.noobfly.containersearcher.compat.Compat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.particles.ParticleTypes;
+import it.unimi.dsi.fastutil.ints.IntList;
+import net.minecraft.world.item.component.FireworkExplosion;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -22,6 +26,9 @@ public final class HighlightManager {
 
 	private final List<Marker> markers = new ArrayList<>();
 	private final Map<String, Long> glowingVillagers = new LinkedHashMap<>();
+	private long nextFireworkAt;
+	// one locate = one firework run, any opened container or expiry ends it
+	private boolean fireworksOn;
 
 	public HighlightManager() {
 		instance = this;
@@ -68,6 +75,53 @@ public final class HighlightManager {
 				markers.add(new Marker(origin, secondaryPos, shape, expiresAt));
 			}
 		}
+		nextFireworkAt = 0L;
+		fireworksOn = !markers.isEmpty();
+	}
+
+	// client-side rockets: a spark trail for ~1 flight (16 ticks), then the burst
+	private static final int ROCKET_TICKS = 16;
+	private static final double ROCKET_RISE = 0.5D;
+	private final List<double[]> rockets = new ArrayList<>();
+
+	private void stopFireworks() {
+		fireworksOn = false;
+		rockets.clear();
+	}
+
+	private void launchFireworks(Minecraft client) {
+		if (client.level == null || client.player == null || markers.isEmpty()) {
+			return;
+		}
+		List<Marker> nearest = new ArrayList<>(markers);
+		nearest.sort(java.util.Comparator.comparingDouble(m -> client.player.distanceToSqr(
+			m.origin.getX() + 0.5D, m.origin.getY() + 0.5D, m.origin.getZ() + 0.5D)));
+		for (int i = 0; i < Math.min(8, nearest.size()); i++) {
+			BlockPos p = nearest.get(i).origin;
+			rockets.add(new double[]{p.getX() + 0.5D, p.getY() + 1.0D, p.getZ() + 0.5D, 0});
+		}
+	}
+
+	private void tickRockets(Minecraft client) {
+		if (rockets.isEmpty()) {
+			return;
+		}
+		if (client.level == null) {
+			rockets.clear();
+			return;
+		}
+		FireworkExplosion explosion = new FireworkExplosion(
+			FireworkExplosion.Shape.LARGE_BALL, IntList.of(0xFFFF55, 0xFFAA00), IntList.of(0xFFFFFF), false, true);
+		rockets.removeIf(r -> {
+			r[3]++;
+			double y = r[1] + r[3] * ROCKET_RISE;
+			if (r[3] >= ROCKET_TICKS) {
+				Compat.createFireworks(client.level, r[0], y, r[2], List.of(explosion));
+				return true;
+			}
+			client.level.addParticle(ParticleTypes.FIREWORK, r[0], y, r[2], 0.0D, -0.1D, 0.0D);
+			return false;
+		});
 	}
 
 	public List<double[]> visibleBoxes(Minecraft client) {
@@ -97,6 +151,14 @@ public final class HighlightManager {
 	public void tick(Minecraft client) {
 		long now = System.currentTimeMillis();
 		markers.removeIf(marker -> client.level == null || marker.expiresAt <= now);
+		if (markers.isEmpty()) {
+			stopFireworks();
+		}
+		tickRockets(client);
+		if (fireworksOn && ModSettings.locateFireworksEnabled() && now >= nextFireworkAt) {
+			nextFireworkAt = now + 4000L;
+			launchFireworks(client);
+		}
 		List<String> expired = glowingVillagers.entrySet().stream()
 			.filter(entry -> client.level == null || entry.getValue() <= now)
 			.map(Map.Entry::getKey)
@@ -115,11 +177,14 @@ public final class HighlightManager {
 	}
 
 	public void removeAt(BlockPos pos) {
-		markers.removeIf(marker -> marker.contains(pos));
+		if (markers.removeIf(marker -> marker.contains(pos))) {
+			stopFireworks();
+		}
 	}
 
 	public void clear(Minecraft client) {
 		markers.clear();
+		stopFireworks();
 		glowingVillagers.clear();
 	}
 

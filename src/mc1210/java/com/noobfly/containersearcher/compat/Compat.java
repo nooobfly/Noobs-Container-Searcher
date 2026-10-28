@@ -50,4 +50,9 @@ public final class Compat {
 	public static boolean isLeftButton(int b) {
 		return b == 0;
 	}
+
+	public static void createFireworks(net.minecraft.client.multiplayer.ClientLevel level, double x, double y, double z,
+		java.util.List<net.minecraft.world.item.component.FireworkExplosion> explosions) {
+		level.createFireworks(x, y, z, 0.0D, 0.0D, 0.0D, explosions);
+	}
 }

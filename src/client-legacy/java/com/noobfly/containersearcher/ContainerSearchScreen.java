@@ -714,13 +714,32 @@ public final class ContainerSearchScreen extends CompatScreen {
 		}
 
 		int rightX = x + w - 8;
+		int oneX = 0;
+		int oneW = 0;
+		int allX = 0;
+		int allW = 0;
 		if (viewingKey != null) {
 			// another server's data: nothing here can be located in this world
 		} else if (hover) {
-			String locate = Component.translatable("screen.noobs_container_searcher.locate").getString();
-			int bw = font.width(locate) + 28;
-			drawButton(g, rightX - bw, y + 4, bw, 20, locate, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, ICON_ARROW);
-			rightX -= bw + 8;
+			// settings decide which buttons exist; "all" is skipped when it would match "locate"
+			boolean wantOne = ModSettings.locateOneEnabled();
+			boolean multi = recordsFor(row).size() > singleRecordFor(row).size();
+			if (ModSettings.locateAllEnabled() && !row.record.blockGone && (multi || !wantOne)) {
+				String all = Component.translatable("screen.noobs_container_searcher.locate_all").getString();
+				allW = font.width(all) + 28;
+				allX = rightX - allW;
+				drawButton(g, allX, y + 4, allW, 20, all, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, ICON_ARROW);
+				rightX -= allW + 4;
+			}
+			if (wantOne || allW == 0) {
+				String locate = Component.translatable("screen.noobs_container_searcher.locate").getString();
+				oneW = font.width(locate) + 28;
+				oneX = rightX - oneW;
+				drawButton(g, oneX, y + 4, oneW, 20, locate, ACCENT, ACCENT_HOVER, ACCENT_DARK, true, ICON_ARROW);
+				rightX -= oneW + 8;
+			} else {
+				rightX -= 4;
+			}
 		} else {
 			double distance = distanceTo(row.record);
 			if (distance != -2) {
@@ -789,20 +808,46 @@ public final class ContainerSearchScreen extends CompatScreen {
 		if (cx + font.width(more) < rightX) {
 			g.text(font, more, cx, y + 17, TEXT_MUTED);
 		}
-		hitClipped(x, y, w, RESULT_HEIGHT, x, viewY, w, viewH, () -> {
-			if (viewingKey != null) {
-				return;
+		// plain row click follows whichever button is on (the single one wins when both are)
+		boolean rowAll = !ModSettings.locateOneEnabled();
+		hitClipped(x, y, w, RESULT_HEIGHT, x, viewY, w, viewH, () -> locateRow(row, rowAll));
+		// later hits win, so the buttons go after the row itself
+		if (oneW > 0) {
+			hitClipped(oneX, y + 4, oneW, 20, x, viewY, w, viewH, () -> locateRow(row, false));
+		}
+		if (allW > 0) {
+			hitClipped(allX, y + 4, allW, 20, x, viewY, w, viewH, () -> locateRow(row, true));
+		}
+	}
+
+	private void locateRow(ResultRow row, boolean all) {
+		if (viewingKey != null) {
+			return;
+		}
+		if (row.record.blockGone) {
+			if (minecraft != null && minecraft.player != null) {
+				Compat.message(minecraft.player, Component.translatable("message.noobs_container_searcher.ender_gone").withStyle(ChatFormatting.YELLOW));
 			}
-			if (row.record.blockGone) {
-				if (minecraft != null && minecraft.player != null) {
-					Compat.message(minecraft.player, Component.translatable("message.noobs_container_searcher.ender_gone").withStyle(ChatFormatting.YELLOW));
-				}
-				onClose();
-				return;
-			}
-			controller.focusItem(row.itemId, recordsFor(row), selectedFilter, row.item);
 			onClose();
-		});
+			return;
+		}
+		List<ContainerRecord> targets = all ? recordsFor(row) : singleRecordFor(row);
+		controller.focusItem(row.itemId, targets, selectedFilter, row.item, all);
+		onClose();
+	}
+
+	// just the clicked container (every ender chest for the ender inventory, they share it)
+	private List<ContainerRecord> singleRecordFor(ResultRow row) {
+		if (isEnderChest(row.record)) {
+			List<ContainerRecord> enders = new ArrayList<>();
+			for (ContainerRecord other : records) {
+				if (isEnderChest(other) && !other.blockGone) {
+					enders.add(other);
+				}
+			}
+			return enders;
+		}
+		return List.of(row.record);
 	}
 
 	// chest/shulker/etc. show their own block item, villagers show the spawn egg
@@ -1629,7 +1674,20 @@ public final class ContainerSearchScreen extends CompatScreen {
 			"screen.noobs_container_searcher.settings_arrows_hint", ModSettings.targetArrowsEnabled(),
 			() -> ModSettings.get().setTargetArrows(!ModSettings.targetArrowsEnabled()));
 
-		int y2 = yt + 38 + 8;
+		int yl = yt + 38 + 8;
+		toggleCard(g, bx, yl, half, "screen.noobs_container_searcher.settings_locate_one_title",
+			"screen.noobs_container_searcher.settings_locate_one_hint", ModSettings.locateOneEnabled(),
+			() -> ModSettings.get().toggleLocateOne());
+		toggleCard(g, rx, yl, half, "screen.noobs_container_searcher.settings_locate_all_title",
+			"screen.noobs_container_searcher.settings_locate_all_hint", ModSettings.locateAllEnabled(),
+			() -> ModSettings.get().toggleLocateAll());
+
+		int yf = yl + 38 + 8;
+		toggleCard(g, bx, yf, cw, "screen.noobs_container_searcher.settings_fireworks_title",
+			"screen.noobs_container_searcher.settings_fireworks_hint", ModSettings.locateFireworksEnabled(),
+			() -> ModSettings.get().toggleLocateFireworks());
+
+		int y2 = yf + 38 + 8;
 		card(g, bx, y2, cw, 62, SURFACE, BORDER);
 		Component clearTitle = Component.translatable("screen.noobs_container_searcher.clear_data_title").withStyle(ChatFormatting.BOLD);
 		if (viewingKey != null) {

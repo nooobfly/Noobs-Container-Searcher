@@ -266,7 +266,7 @@ public final class SearchController {
 		highlights.clear(client);
 	}
 
-	void focusItem(String itemId, List<ContainerRecord> records, String filter, ContainerItemRecord variant) {
+	void focusItem(String itemId, List<ContainerRecord> records, String filter, ContainerItemRecord variant, boolean all) {
 		Minecraft client = Minecraft.getInstance();
 		ResourceLocation identifier = ResourceLocation.tryParse(itemId);
 		if (identifier != null) {
@@ -279,10 +279,9 @@ public final class SearchController {
 		if (client.player == null) {
 			return;
 		}
-		Compat.message(client.player, Component.translatable(
-			"message.noobs_container_searcher.gui_selected",
-			itemName(identifier),
-			records.size()
+		Compat.message(client.player, (all
+			? Component.translatable("message.noobs_container_searcher.gui_selected", itemName(identifier), records.size())
+			: Component.translatable("message.noobs_container_searcher.gui_selected_one", itemName(identifier))
 		).withStyle(ChatFormatting.GOLD));
 		for (ContainerRecord record : records) {
 			Compat.message(client.player, resultLine(record, itemId));

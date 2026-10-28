@@ -47,4 +47,9 @@ public final class Compat {
 	public static Object biomeManager(net.minecraft.client.multiplayer.ClientLevel level) {
 		return level.getBiomeManager();
 	}
+
+	public static void createFireworks(net.minecraft.client.multiplayer.ClientLevel level, double x, double y, double z,
+		java.util.List<net.minecraft.world.item.component.FireworkExplosion> explosions) {
+		level.createFireworks(x, y, z, 0.0D, 0.0D, 0.0D, explosions, false);
+	}
 }
